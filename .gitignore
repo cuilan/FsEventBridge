@@ -1,0 +1,44 @@
+# --- 编译与构建产物 ---
+build/
+bin/
+obj/
+*.o
+*.a
+*.so
+*.out
+
+# --- CMake 自动生成文件 ---
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+
+# --- CPack 打包产物 ---
+_CPack_Packages/
+*.deb
+*.rpm
+*.tar.gz
+CPackConfig.cmake
+CPackSourceConfig.cmake
+
+# --- IDE 与编辑器 ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# --- 调试与日志 ---
+*.log
+gmon.out
+.gdb_history
+
+# --- 静态分析与覆盖率 ---
+*.gcno
+*.gcda
+*.gcov
+cppcheck-result.xml

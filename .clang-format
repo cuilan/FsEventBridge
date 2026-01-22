@@ -1,0 +1,33 @@
+---
+# 基于 LLVM 基础风格
+BasedOnStyle: LLVM
+
+# 缩进宽度为 4 个空格
+IndentWidth: 4
+# 使用空格代替 Tab
+UseTab: Never
+# 每行最大长度
+ColumnLimit: 100
+
+# 指针对齐方式：靠近变量名 (int *ptr)
+PointerAlignment: Right
+
+# 括号换行风格：在函数定义前不换行
+AllowShortFunctionsOnASingleLine: None
+BreakBeforeBraces: Attach
+
+# 关键字后的空格
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+
+# 连续宏定义的对齐
+AlignConsecutiveMacros: true
+# 连续赋值的对齐
+AlignConsecutiveAssignments: false
+
+# 排序头文件
+SortIncludes: true
+
+# 针对 C17 的优化
+Standard: C11
+...

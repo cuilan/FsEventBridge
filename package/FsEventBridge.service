@@ -1,0 +1,16 @@
+[Unit]
+Description=Fs Event Bridge Gateway
+After=network.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/FsEventBridge -c /etc/FsEventBridge/config.toml
+Restart=always
+# 赋予内核监控必要的特权
+CapabilityBoundingSet=CAP_SYS_ADMIN
+AmbientCapabilities=CAP_SYS_ADMIN
+# 限制资源
+MemoryMax=100M
+
+[Install]
+WantedBy=multi-user.target

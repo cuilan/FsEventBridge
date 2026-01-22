@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure|install)
+        # 重新加载 systemd 配置
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        # 如果是首次安装，默认启用服务
+        if [ -z "$2" ]; then
+            systemctl enable FsEventBridge.service >/dev/null 2>&1 || true
+        fi
+        echo "FsEventBridge 安装成功，使用 'systemctl start FsEventBridge' 启动。"
+        ;;
+esac
+
+exit 0
