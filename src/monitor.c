@@ -6,15 +6,17 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <string.h>
+#include <poll.h>
 
 // 初始化 fanotify 句柄
 int monitor_init(const feb_config_t *config) {
     // 1. 初始化 fanotify 组
     // FAN_CLASS_NOTIF: 普通通知模式，不阻塞写操作
     // O_RDONLY | O_CLOEXEC: 句柄只读，且在 exec 时自动关闭
-    int fan_fd = fanotify_init(FAN_CLASS_NOTIF, O_RDONLY | O_CLOEXEC);
+    int fan_fd = fanotify_init(FAN_CLASS_NOTIF | FAN_NONBLOCK, O_RDONLY | O_CLOEXEC);
     if (fan_fd == -1) {
-        perror("fanotify_init 失败");
+        perror("fanotify_init failed");
         return -1;
     }
 
@@ -26,7 +28,7 @@ int monitor_init(const feb_config_t *config) {
     unsigned int flags = FAN_MARK_ADD | FAN_MARK_FILESYSTEM;
 
     if (fanotify_mark(fan_fd, flags, mask, AT_FDCWD, config->monitor_path) == -1) {
-        perror("fanotify_mark 失败");
+        perror("fanotify_mark failed");
         close(fan_fd);
         return -1;
     }
@@ -46,15 +48,42 @@ static void get_path_from_fd(int fd, char *path, size_t size) {
     }
 }
 
+// 简单的后缀名过滤
+static bool should_skip(const char *path, const feb_config_t *config) {
+    if (config->exclude_exts_count == 0) return false;
+    
+    const char *dot = strrchr(path, '.');
+    if (!dot) return false;
+
+    for (int i = 0; i < config->exclude_exts_count; i++) {
+        if (strcmp(dot, config->exclude_exts[i]) == 0) return true;
+    }
+    return false;
+}
+
 // 事件主循环
-void monitor_loop(int fan_fd, const feb_config_t *config) {
+void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile sig_atomic_t *running) {
     char buf[8192] __attribute__((aligned(__alignof__(struct fanotify_event_metadata))));
     ssize_t len;
+    struct pollfd fds[1];
 
-    while (true) {
+    fds[0].fd = fan_fd;
+    fds[0].events = POLLIN;
+
+    while (*running) {
+        // 使用 poll 等待事件，避免 100% CPU 占用 (非阻塞读取)
+        int ret = poll(fds, 1, 500); // 500ms 超时，允许检查 running 标志
+        if (ret < 0) {
+            if (errno == EINTR) continue;
+            perror("poll failed");
+            break;
+        }
+        if (ret == 0) continue; // 超时
+
         len = read(fan_fd, buf, sizeof(buf));
-        if (len == -1 && errno != EAGAIN) {
-            perror("读取 fanotify 事件错误");
+        if (len == -1) {
+            if (errno == EAGAIN || errno == EINTR) continue;
+            perror("Error reading fanotify event");
             break;
         }
 
@@ -68,24 +97,34 @@ void monitor_loop(int fan_fd, const feb_config_t *config) {
                 // 获取路径
                 get_path_from_fd(metadata->fd, event.path, sizeof(event.path));
                 
-                // 获取文件元数据 (大小、时间)
-                struct stat st;
-                if (fstat(metadata->fd, &st) == 0) {
-                    event.size = (uint64_t)st.st_size;
-                    event.timestamp = (int64_t)st.st_mtim.tv_sec;
-                }
-                
-                event.mask = metadata->mask;
+                // 检查是否在排除列表中
+                if (!should_skip(event.path, config)) {
+                    // 获取文件元数据 (大小、时间)
+                    struct stat st;
+                    if (fstat(metadata->fd, &st) == 0) {
+                        event.size = (uint64_t)st.st_size;
+                        event.timestamp = (int64_t)st.st_mtim.tv_sec;
+                    }
+                    
+                    event.mask = metadata->mask;
 
-                // --- 处理逻辑 ---
-                // 这里可以先进行初步过滤 (比如后缀检查)，然后分发给 IPC 模块
-                printf("[DEBUG] 检测到文件写入完成: %s (Size: %lu)\n", event.path, event.size);
-                
-                // TODO: ipc_broadcast(server_fd, &event);
+                    // 分发给 IPC 模块
+                    ipc_broadcast(ipc_fd, &event);
+                    
+                    if (config->log_level <= FEB_LOG_DEBUG) {
+                        printf("[DEBUG] Event sent: %s (Size: %lu)\n", event.path, event.size);
+                    }
+                }
 
                 close(metadata->fd); // 必须手动关闭内核提供的 fd
             }
             metadata = FAN_EVENT_NEXT(metadata, len);
         }
+    }
+}
+
+void monitor_cleanup(int fan_fd) {
+    if (fan_fd >= 0) {
+        close(fan_fd);
     }
 }

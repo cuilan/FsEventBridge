@@ -18,13 +18,13 @@ static void signal_handler(int sig) {
 
 // 帮助信息
 static void print_usage(const char *prog_name) {
-    printf("用法: %s [选项]\n", prog_name);
-    printf("选项:\n");
-    printf("  -c, --config PATH    指定 TOML 配置文件路径\n");
-    printf("  -d, --dir PATH       指定监控目录 (覆盖配置)\n");
-    printf("  -s, --socket PATH    指定 Unix Socket 路径 (覆盖配置)\n");
-    printf("  -v, --version        显示版本信息\n");
-    printf("  -h, --help           显示此帮助信息\n");
+    printf("Usage: %s [options]\n", prog_name);
+    printf("Options:\n");
+    printf("  -c, --config PATH    Specify the TOML configuration file path\n");
+    printf("  -d, --dir PATH       Specify the monitoring directory (override configuration)\n");
+    printf("  -s, --socket PATH    Specify the Unix Socket path (override configuration)\n");
+    printf("  -v, --version        Display version information\n");
+    printf("  -h, --help           Display this help information\n");
 }
 
 int main(int argc, char **argv) {
@@ -42,11 +42,13 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
 
-    // 2. 解析命令行参数
+    // 2. 解析命令行参数 (第一遍：获取配置文件路径)
     while ((opt = getopt_long(argc, argv, "c:d:s:vh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'c': config_file = optarg; break;
-            case 'v': printf("FsEventBridge 版本: %s\n", FEB_VERSION); return 0;
+            case 'd': /* 延迟处理 */ break;
+            case 's': /* 延迟处理 */ break;
+            case 'v': printf("FsEventBridge Version: %s\n", FEB_VERSION); return 0;
             case 'h': print_usage(argv[0]); return 0;
             default:  print_usage(argv[0]); return 1;
         }
@@ -60,8 +62,14 @@ int main(int argc, char **argv) {
     // 再次解析参数以支持命令行覆盖配置文件的值 (重置 optind)
     optind = 1;
     while ((opt = getopt_long(argc, argv, "c:d:s:vh", long_options, NULL)) != -1) {
-        if (opt == 'd') strncpy(config.monitor_path, optarg, FEB_MAX_PATH);
-        if (opt == 's') strncpy(config.socket_path, optarg, FEB_MAX_PATH);
+        if (opt == 'd') {
+            strncpy(config.monitor_path, optarg, FEB_MAX_PATH - 1);
+            config.monitor_path[FEB_MAX_PATH - 1] = '\0';
+        }
+        if (opt == 's') {
+            strncpy(config.socket_path, optarg, FEB_MAX_PATH - 1);
+            config.socket_path[FEB_MAX_PATH - 1] = '\0';
+        }
     }
 
     // 4. 注册信号
@@ -80,20 +88,20 @@ int main(int argc, char **argv) {
 
     // 6. 告知 systemd 服务已就绪
     sd_notify(0, "READY=1");
-    printf("[MAIN] FsEventBridge 启动成功，监控目录: %s\n", config.monitor_path);
+    printf("[MAIN] FsEventBridge Started Successfully, Monitoring Directory: %s\n", config.monitor_path);
 
     // 7. 进入主循环 (将 running 标志传递给 monitor_loop)
     // 修改后的 monitor_loop 内部应检查 running 标志
     monitor_loop(fan_fd, ipc_fd, &config, &running);
 
     // 8. 优雅清理退出
-    printf("[MAIN] 正在停止服务...\n");
+    printf("[MAIN] Stopping Service...\n");
     sd_notify(0, "STOPPING=1");
     
     monitor_cleanup(fan_fd);
     ipc_cleanup(ipc_fd, config.socket_path);
     config_destroy(&config);
 
-    printf("[MAIN] 服务已安全退出。\n");
+    printf("[MAIN] Service has exited safely.\n");
     return 0;
 }

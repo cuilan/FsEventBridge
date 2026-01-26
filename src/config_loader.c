@@ -6,8 +6,8 @@
 
 static void set_default_config(feb_config_t *config) {
     memset(config, 0, sizeof(feb_config_t));
-    strncpy(config->monitor_path, "/tmp", FEB_MAX_PATH);
-    strncpy(config->socket_path, "/tmp/feb.sock", FEB_MAX_PATH);
+    strncpy(config->monitor_path, "/tmp", FEB_MAX_PATH - 1);
+    strncpy(config->socket_path, "/tmp/feb.sock", FEB_MAX_PATH - 1);
     config->recursive = true;
     config->use_io_uring = true;
     config->log_level = FEB_LOG_INFO;
@@ -37,7 +37,8 @@ bool config_load(feb_config_t *config, const char *path) {
     if (server) {
         toml_datum_t sock = toml_string_in(server, "socket_path");
         if (sock.ok) {
-            strncpy(config->socket_path, sock.u.s, FEB_MAX_PATH);
+            strncpy(config->socket_path, sock.u.s, FEB_MAX_PATH - 1);
+            config->socket_path[FEB_MAX_PATH - 1] = '\0';
             free(sock.u.s);
         }
     }
@@ -47,7 +48,8 @@ bool config_load(feb_config_t *config, const char *path) {
     if (monitor) {
         toml_datum_t mpath = toml_string_in(monitor, "path");
         if (mpath.ok) {
-            strncpy(config->monitor_path, mpath.u.s, FEB_MAX_PATH);
+            strncpy(config->monitor_path, mpath.u.s, FEB_MAX_PATH - 1);
+            config->monitor_path[FEB_MAX_PATH - 1] = '\0';
             free(mpath.u.s);
         }
 

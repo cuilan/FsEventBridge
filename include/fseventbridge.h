@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <limits.h>
 #include <sys/types.h>
+#include <signal.h>
 
 // 限制与定义
 #define FEB_MAX_PATH PATH_MAX
@@ -43,7 +44,9 @@ bool config_load(feb_config_t *config, const char *path);
 void config_destroy(feb_config_t *config);
 
 int monitor_init(const feb_config_t *config);
-void monitor_loop(int fan_fd, const feb_config_t *config);
+void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile sig_atomic_t *running);
+void monitor_cleanup(int fan_fd);
 
 int ipc_init(const char *socket_path);
 void ipc_broadcast(int server_fd, const feb_event_t *event);
+void ipc_cleanup(int server_fd, const char *socket_path);
