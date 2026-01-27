@@ -2,7 +2,7 @@ import socket
 import os
 
 # Unix Domain Socket 路径
-SOCKET_PATH = "/tmp/feb_test.sock"
+SOCKET_PATH = "/tmp/feb.sock"
 
 def main():
     if not os.path.exists(SOCKET_PATH):
