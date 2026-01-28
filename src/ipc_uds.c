@@ -20,7 +20,7 @@ static struct {
 int ipc_init(const char *socket_path) {
     int server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (server_fd == -1) {
-        perror("Socket 创建失败");
+        perror("Socket creation failed");
         return -1;
     }
 
@@ -37,13 +37,13 @@ int ipc_init(const char *socket_path) {
     unlink(socket_path);
 
     if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        perror("Socket 绑定失败");
+        perror("Socket binding failed");
         close(server_fd);
         return -1;
     }
 
     if (listen(server_fd, 5) == -1) {
-        perror("Socket 监听失败");
+        perror("Socket listening failed");
         close(server_fd);
         return -1;
     }
@@ -59,7 +59,7 @@ void ipc_accept_clients(int server_fd) {
         int client_fd = accept(server_fd, NULL, NULL);
         if (client_fd == -1) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                perror("Accept 错误");
+                perror("Accept error");
             }
             break;
         }
@@ -71,13 +71,13 @@ void ipc_accept_clients(int server_fd) {
                 clients.fds[i] = client_fd;
                 clients.count++;
                 added = true;
-                printf("[IPC] 新客户端连接，FD: %d\n", client_fd);
+                printf("[IPC] New client connected, FD: %d\n", client_fd);
                 break;
             }
         }
 
         if (!added) {
-            printf("[IPC] 客户端已满，拒绝连接\n");
+            printf("[IPC] Client full, rejecting connection\n");
             close(client_fd);
         }
     }
@@ -96,17 +96,17 @@ void ipc_broadcast(int server_fd, const feb_event_t *event) {
 
     if (json_len < 0 || json_len >= (int)sizeof(json_buf)) return;
 
-    // 3. 遍历客户端发送数据
+    // 3. 遍历客户端发送数据 (MSG_NOSIGNAL 标志，处理 破碎管道 (EPIPE) 错误)
     for (int i = 0; i < MAX_CLIENTS; i++) {
         int fd = clients.fds[i];
         if (fd == -1) continue;
 
-        // MSG_NOSIGNAL 标志，处理 破碎管道 (EPIPE)
+        // MSG_NOSIGNAL 标志，处理 破碎管道 (EPIPE) 错误
         ssize_t sent = send(fd, json_buf, json_len, MSG_NOSIGNAL);
         if (sent == -1) {
-            // 如果上游程序关闭了连接，清理 FD
+            // 如果上游程序关闭了连接，清理文件描述符
             if (errno == EPIPE || errno == ECONNRESET) {
-                printf("[IPC] 客户端断开，清理 FD: %d\n", fd);
+                printf("[IPC] Client disconnected, cleaning FD: %d\n", fd);
                 close(fd);
                 clients.fds[i] = -1;
                 clients.count--;

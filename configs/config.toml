@@ -3,10 +3,11 @@ socket_path = "/tmp/feb.sock"
 log_level = "info"
 
 [monitor]
-path = "/data/sate"
+path = "/tmp"
 recursive = true
 events = ["CLOSE_WRITE", "MOVED_TO"]
 exclude_extensions = [".tmp", ".swp"]
+exclude_path = ["", ""]
 
 [processor]
 # 启用 io_uring 加速

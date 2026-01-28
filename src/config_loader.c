@@ -6,7 +6,7 @@
 
 static void set_default_config(feb_config_t *config) {
     memset(config, 0, sizeof(feb_config_t));
-    strncpy(config->monitor_path, "/tmp", FEB_MAX_PATH - 1);
+    // strncpy(config->monitor_path, "/tmp", FEB_MAX_PATH - 1);
     strncpy(config->socket_path, "/tmp/feb.sock", FEB_MAX_PATH - 1);
     config->recursive = true;
     config->use_io_uring = true;
@@ -14,21 +14,24 @@ static void set_default_config(feb_config_t *config) {
 }
 
 bool config_load(feb_config_t *config, const char *path) {
+    // 设置默认配置
     set_default_config(config);
     if (path == NULL) return true;
 
+    // 打开配置文件
     FILE *fp = fopen(path, "r");
     if (!fp) {
-        perror("无法打开配置文件");
+        perror("Error: Failed to open configuration file");
         return false;
     }
 
+    // 解析配置文件
     char errbuf[200];
     toml_table_t *conf = toml_parse_file(fp, errbuf, sizeof(errbuf));
     fclose(fp);
 
     if (!conf) {
-        fprintf(stderr, "TOML 解析错误: %s\n", errbuf);
+        fprintf(stderr, "Error: TOML parsing error: %s\n", errbuf);
         return false;
     }
 
@@ -66,6 +69,16 @@ bool config_load(feb_config_t *config, const char *path) {
                 if (ext.ok) config->exclude_exts[i] = ext.u.s;
             }
         }
+
+        toml_array_t *excl_paths = toml_array_in(monitor, "exclude_paths");
+        if (excl_paths) {
+            config->exclude_paths_count = toml_array_nelem(excl_paths);
+            config->exclude_paths = calloc(config->exclude_paths_count, sizeof(char*));
+            for (int i = 0; i < config->exclude_paths_count; i++) {
+                toml_datum_t path = toml_string_at(excl_paths, i);
+                if (path.ok) config->exclude_paths[i] = path.u.s;
+            }
+        }
     }
 
     toml_free(conf);
@@ -78,5 +91,11 @@ void config_destroy(feb_config_t *config) {
             free(config->exclude_exts[i]);
         }
         free(config->exclude_exts);
+    }
+    if (config->exclude_paths) {
+        for (int i = 0; i < config->exclude_paths_count; i++) {
+            free(config->exclude_paths[i]);
+        }
+        free(config->exclude_paths);
     }
 }

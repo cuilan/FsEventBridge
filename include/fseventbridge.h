@@ -8,7 +8,10 @@
 
 // 限制与定义
 #define FEB_MAX_PATH PATH_MAX
-#define FEB_VERSION "1.0.0"
+
+#ifndef FEB_VERSION
+#define FEB_VERSION "unknown"
+#endif
 
 // 日志级别
 typedef enum {
@@ -29,6 +32,8 @@ typedef struct {
     // 过滤规则
     char **exclude_exts;               // 排除的扩展名列表
     int exclude_exts_count;
+    char **exclude_paths;              // 排除的路径列表
+    int exclude_paths_count;
 } feb_config_t;
 
 // 文件事件模型
@@ -40,6 +45,7 @@ typedef struct {
 } feb_event_t;
 
 // 模块接口声明
+void print_usage(const char *prog_name);
 bool config_load(feb_config_t *config, const char *path);
 void config_destroy(feb_config_t *config);
 

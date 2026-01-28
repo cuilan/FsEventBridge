@@ -1,12 +1,18 @@
 cmake_minimum_required(VERSION 3.12)
 project(FsEventBridge C)
 
+# --- 自动版本管理 ---
+# 读取 VERSION 文件内容
+file(READ "VERSION" FEB_VERSION_RAW)
+string(STRIP "${FEB_VERSION_RAW}" FEB_VERSION)
+message(STATUS "FsEventBridge Version: ${FEB_VERSION}")
+
 # 1. 编译器选项：强制 C17 标准并开启严苛模式
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # 开启所有警告并视警告为错误，确保代码质量符合工业级标准
-add_definitions(-D_GNU_SOURCE)
+add_definitions(-D_GNU_SOURCE -DFEB_VERSION="${FEB_VERSION}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror -O2 -g")
 
 # 2. 查找必要的系统库
@@ -42,7 +48,7 @@ install(FILES package/FsEventBridge.service DESTINATION /lib/systemd/system)
 # --- 5. CPack 自动打包配置 (生成 .deb 和 .rpm) ---
 
 set(CPACK_PACKAGE_NAME "fseventbridge")
-set(CPACK_PACKAGE_VERSION "1.0.0")
+set(CPACK_PACKAGE_VERSION "${FEB_VERSION}")
 set(CPACK_PACKAGE_VENDOR "FsEventBridge Community")
 set(CPACK_PACKAGE_CONTACT "admin@example.com")
 set(CPACK_PACKAGE_DESCRIPTION "High-performance Linux file system event gateway via fanotify.")

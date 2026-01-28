@@ -10,3 +10,6 @@ cmake ..
 
 # 3. 编译
 make -j$(nproc)
+
+# 4. 一键打包
+cpack
