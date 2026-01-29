@@ -16,7 +16,7 @@ int monitor_init(const feb_config_t *config) {
     // O_RDONLY | O_CLOEXEC: 句柄只读，且在 exec 时自动关闭
     int fan_fd = fanotify_init(FAN_CLASS_NOTIF | FAN_NONBLOCK, O_RDONLY | O_CLOEXEC);
     if (fan_fd == -1) {
-        perror("fanotify_init failed");
+        LOG_ERROR("fanotify_init failed");
         return -1;
     }
 
@@ -24,11 +24,12 @@ int monitor_init(const feb_config_t *config) {
     // FAN_MARK_ADD: 添加新标记
     // FAN_MARK_FILESYSTEM: 监控整个文件系统 (实现递归的关键)
     // FAN_CLOSE_WRITE: 关键！只捕获文件写完并关闭的事件
-    uint64_t mask = FAN_CLOSE_WRITE | FAN_EVENT_ON_CHILD;
+    // uint64_t mask = FAN_CLOSE_WRITE | FAN_EVENT_ON_CHILD;
+    uint64_t mask = FAN_CLOSE_WRITE; // 对于 FAN_MARK_FILESYSTEM, 不需要 ON_CHILD
     unsigned int flags = FAN_MARK_ADD | FAN_MARK_FILESYSTEM;
 
     if (fanotify_mark(fan_fd, flags, mask, AT_FDCWD, config->monitor_path) == -1) {
-        perror("fanotify_mark failed");
+        LOG_ERROR("fanotify_mark failed");
         close(fan_fd);
         return -1;
     }
@@ -75,7 +76,7 @@ void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile s
         int ret = poll(fds, 1, 500); // 500ms 超时，允许检查 running 标志
         if (ret < 0) {
             if (errno == EINTR) continue;
-            perror("poll failed");
+            LOG_ERROR("poll failed");
             break;
         }
         if (ret == 0) continue; // 超时
@@ -83,7 +84,7 @@ void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile s
         len = read(fan_fd, buf, sizeof(buf));
         if (len == -1) {
             if (errno == EAGAIN || errno == EINTR) continue;
-            perror("Error reading fanotify event");
+            LOG_ERROR("Error reading fanotify event");
             break;
         }
 
@@ -111,9 +112,7 @@ void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile s
                     // 分发给 IPC 模块
                     ipc_broadcast(ipc_fd, &event);
                     
-                    if (config->log_level <= FEB_LOG_DEBUG) {
-                        printf("[DEBUG] Event sent: %s (Size: %lu)\n", event.path, event.size);
-                    }
+                    LOG_DEBUG("Event sent: %s (Size: %lu)", event.path, event.size);
                 }
 
                 close(metadata->fd); // 必须手动关闭内核提供的 fd

@@ -7,6 +7,9 @@
 #include <unistd.h>
 #include <systemd/sd-daemon.h>
 
+// 默认日志级别
+feb_log_level_t g_log_level = FEB_LOG_INFO; 
+
 // 全局运行标志，sig_atomic_t 确保信号处理的原子性
 static volatile sig_atomic_t running = 1;
 
@@ -20,7 +23,7 @@ static void signal_handler(int sig) {
 static void add_string_to_array(char ***array, int *count, const char *str) {
     char **new_array = realloc(*array, sizeof(char *) * (*count + 1));
     if (!new_array) {
-        perror("Memory allocation failed");
+        LOG_ERROR("Memory allocation failed");
         exit(1);
     }
     *array = new_array;
@@ -51,7 +54,7 @@ void print_usage(const char *prog_name) {
     printf("\n");
     printf("  High-Performance File System Event Bridge (Linux fanotify & io_uring)\n");
     printf("  Version: %s\n", FEB_VERSION);
-    printf("  Repo: https://github.com/your-repo/FsEventBridge\n\n");
+    printf("  Repo: https://github.com/cuilan/FsEventBridge\n\n");
 
     printf("Usage:\n");
     printf("  %s [options]\n\n", prog_name);
@@ -159,6 +162,14 @@ int main(int argc, char **argv) {
         }
     }
 
+    // 同步日志级别到全局变量
+    SET_LOG_LEVEL(config.log_level);
+
+    LOG_DEBUG("FsEventBridge is starting...");
+    LOG_INFO("FsEventBridge is starting...");
+    LOG_WARN("FsEventBridge is starting...");
+    LOG_ERROR("FsEventBridge is starting...");
+
     // 4. 注册信号
     signal(SIGINT, signal_handler);  // 按下 Ctrl+C 时调用 signal_handler
     signal(SIGTERM, signal_handler); // 接收到 kill 命令时调用 signal_handler
@@ -185,13 +196,13 @@ int main(int argc, char **argv) {
 
     // 6. 告知 systemd 服务已就绪
     sd_notify(0, "READY=1");
-    printf("[MAIN] FsEventBridge Started Successfully, Monitoring Directory: %s\n", config.monitor_path);
+    LOG_INFO("FsEventBridge Started Successfully, Monitoring Directory: %s", config.monitor_path);
 
     // 7. 进入主循环 (将 running 标志传递给 monitor_loop)
     monitor_loop(fan_fd, ipc_fd, &config, &running);
 
     // 8. 优雅清理退出
-    printf("[MAIN] Stopping Service...\n");
+    LOG_INFO("Stopping Service...");
     sd_notify(0, "STOPPING=1");
     
     // 关闭文件描述符，删除 Socket 文件
@@ -199,6 +210,6 @@ int main(int argc, char **argv) {
     ipc_cleanup(ipc_fd, config.socket_path);
     config_destroy(&config);
 
-    printf("[MAIN] Service has exited safely.\n");
+    LOG_INFO("Service has exited safely.");
     return 0;
 }

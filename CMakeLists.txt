@@ -23,14 +23,15 @@ pkg_check_modules(SYSTEMD REQUIRED libsystemd)
 find_library(LIBURING uring REQUIRED)
 
 # 3. 定义项目源码与包含路径
-include_directories(include)
-# 包含 tomlc99 源代码 (假设放在 src/vendor 下或直接在 src 下)
+include_directories(include vendor/tomlc99)
+# 包含 tomlc99 源代码 (放在 vendor/tomlc99 下)
 add_executable(FsEventBridge 
     src/main.c 
     src/monitor.c 
     src/ipc_uds.c 
     src/config_loader.c
-    src/toml.c  # tomlc99 解析器
+    src/utils.c
+    vendor/tomlc99/toml.c  # tomlc99 解析器
 )
 
 # 链接库：系统库、systemd、uring 和数学库

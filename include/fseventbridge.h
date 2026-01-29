@@ -5,6 +5,9 @@
 #include <limits.h>
 #include <sys/types.h>
 #include <signal.h>
+#include <time.h>
+#include <errno.h>
+#include <string.h>
 
 // 限制与定义
 #define FEB_MAX_PATH PATH_MAX
@@ -20,6 +23,33 @@ typedef enum {
     FEB_LOG_WARN,
     FEB_LOG_ERROR
 } feb_log_level_t;
+
+// 声明全局日志级别变量（在 main.c 中定义）
+extern feb_log_level_t g_log_level;
+
+// 日志核心宏
+#define LOG_BASE(level, level_str, color, fmt, ...) \
+    do { \
+        if (level >= g_log_level) { \
+            time_t now = time(NULL); \
+            struct tm *tm_info = localtime(&now); \
+            char time_buf[26]; \
+            strftime(time_buf, 26, "%Y-%m-%d %H:%M:%S", tm_info); \
+            fprintf(stderr, color "[%s] [%s] " fmt "\x1b[0m\n", \
+                    time_buf, level_str, ##__VA_ARGS__); \
+        } \
+    } while (0)
+
+#define LOG_DEBUG(fmt, ...) LOG_BASE(FEB_LOG_DEBUG, "DEBUG", "\x1b[36m", fmt, ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...)  LOG_BASE(FEB_LOG_INFO,  "INFO ", "\x1b[32m", fmt, ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...)  LOG_BASE(FEB_LOG_WARN,  "WARN ", "\x1b[33m", fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) LOG_BASE(FEB_LOG_ERROR, "ERROR", "\x1b[31m", fmt ": %s", ##__VA_ARGS__, strerror(errno))
+
+// 辅助宏：设置全局日志级别
+#define SET_LOG_LEVEL(level) g_log_level = level
+
+// 辅助宏：获取全局日志级别
+#define GET_LOG_LEVEL() g_log_level
 
 // 核心配置结构体
 typedef struct {
@@ -48,6 +78,25 @@ typedef struct {
 void print_usage(const char *prog_name);
 bool config_load(feb_config_t *config, const char *path);
 void config_destroy(feb_config_t *config);
+
+// 工具函数
+ssize_t escape_json_string(char *dest, size_t size, const char *src);
+
+// 简单的 JSON 写入器
+typedef struct {
+    char *buf;
+    size_t size;
+    size_t offset;
+    bool error;
+    bool first_field;
+} json_writer_t;
+
+void json_init(json_writer_t *w, char *buf, size_t size);
+void json_start_object(json_writer_t *w);
+void json_end_object(json_writer_t *w);
+void json_key_string(json_writer_t *w, const char *key, const char *val);
+void json_key_uint(json_writer_t *w, const char *key, uint64_t val);
+void json_key_int(json_writer_t *w, const char *key, int64_t val);
 
 int monitor_init(const feb_config_t *config);
 void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile sig_atomic_t *running);

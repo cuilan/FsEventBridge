@@ -20,7 +20,7 @@ static struct {
 int ipc_init(const char *socket_path) {
     int server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (server_fd == -1) {
-        perror("Socket creation failed");
+        LOG_ERROR("Socket creation failed");
         return -1;
     }
 
@@ -37,13 +37,13 @@ int ipc_init(const char *socket_path) {
     unlink(socket_path);
 
     if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        perror("Socket binding failed");
+        LOG_ERROR("Socket binding failed");
         close(server_fd);
         return -1;
     }
 
     if (listen(server_fd, 5) == -1) {
-        perror("Socket listening failed");
+        LOG_ERROR("Socket listening failed");
         close(server_fd);
         return -1;
     }
@@ -59,7 +59,7 @@ void ipc_accept_clients(int server_fd) {
         int client_fd = accept(server_fd, NULL, NULL);
         if (client_fd == -1) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                perror("Accept error");
+                LOG_ERROR("Accept error");
             }
             break;
         }
@@ -71,13 +71,13 @@ void ipc_accept_clients(int server_fd) {
                 clients.fds[i] = client_fd;
                 clients.count++;
                 added = true;
-                printf("[IPC] New client connected, FD: %d\n", client_fd);
+                LOG_INFO("[IPC] New client connected, FD: %d", client_fd);
                 break;
             }
         }
 
         if (!added) {
-            printf("[IPC] Client full, rejecting connection\n");
+            LOG_WARN("[IPC] Client full, rejecting connection");
             close(client_fd);
         }
     }
@@ -90,11 +90,30 @@ void ipc_broadcast(int server_fd, const feb_event_t *event) {
 
     // 2. 构造 JSON 字符串 (NDJSON 格式)
     char json_buf[1024];
-    int json_len = snprintf(json_buf, sizeof(json_buf),
-        "{\"path\":\"%s\",\"size\":%lu,\"ts\":%ld,\"mask\":%u}\n",
-        event->path, event->size, event->timestamp, event->mask);
-
-    if (json_len < 0 || json_len >= (int)sizeof(json_buf)) return;
+    json_writer_t w;
+    
+    // 初始化并使用 JsonWriter 接口
+    json_init(&w, json_buf, sizeof(json_buf) - 2); // 留出 \n\0 空间
+    
+    json_start_object(&w);
+    json_key_string(&w, "path", event->path);
+    json_key_uint(&w, "size", event->size);
+    json_key_int(&w, "ts", event->timestamp);
+    json_key_uint(&w, "mask", event->mask);
+    json_end_object(&w);
+    
+    // 检查是否有错误 (例如缓冲区溢出)
+    if (w.error) {
+        LOG_WARN("JSON buffer overflow or encoding error");
+        return;
+    }
+    
+    // 追加换行符 (NDJSON 要求)
+    size_t current_len = w.offset;
+    json_buf[current_len++] = '\n';
+    json_buf[current_len] = '\0';
+    
+    int json_len = (int)current_len;
 
     // 3. 遍历客户端发送数据 (MSG_NOSIGNAL 标志，处理 破碎管道 (EPIPE) 错误)
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -106,7 +125,7 @@ void ipc_broadcast(int server_fd, const feb_event_t *event) {
         if (sent == -1) {
             // 如果上游程序关闭了连接，清理文件描述符
             if (errno == EPIPE || errno == ECONNRESET) {
-                printf("[IPC] Client disconnected, cleaning FD: %d\n", fd);
+                LOG_INFO("[IPC] Client disconnected, cleaning FD: %d", fd);
                 close(fd);
                 clients.fds[i] = -1;
                 clients.count--;
