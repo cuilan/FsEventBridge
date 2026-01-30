@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    remove|purge)
+        # 卸载后重载 systemd 配置
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        ;;
+esac
+
+exit 0

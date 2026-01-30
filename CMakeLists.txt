@@ -62,7 +62,7 @@ set(CPACK_DEBIAN_PACKAGE_MAINTAINER "YourName")
 # 运行时依赖：确保用户安装包时会自动安装 liburing 和 systemd 运行环境
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "liburing2, libc6, libsystemd0")
 # 核心：安装后自动执行脚本 (见下方)
-set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/package/postinst")
+set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/package/postinst;${CMAKE_CURRENT_SOURCE_DIR}/package/prerm;${CMAKE_CURRENT_SOURCE_DIR}/package/postrm")
 
 # RPM (.rpm) 特有配置
 set(CPACK_RPM_PACKAGE_REQUIRES "liburing, glibc, systemd")

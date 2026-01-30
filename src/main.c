@@ -166,9 +166,6 @@ int main(int argc, char **argv) {
     SET_LOG_LEVEL(config.log_level);
 
     LOG_DEBUG("FsEventBridge is starting...");
-    LOG_INFO("FsEventBridge is starting...");
-    LOG_WARN("FsEventBridge is starting...");
-    LOG_ERROR("FsEventBridge is starting...");
 
     // 4. 注册信号
     signal(SIGINT, signal_handler);  // 按下 Ctrl+C 时调用 signal_handler

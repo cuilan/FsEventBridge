@@ -15,6 +15,8 @@ Makefile
 install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
+cmake-build-debug/
+cmake-build-release/
 
 # --- CPack 打包产物 ---
 _CPack_Packages/
