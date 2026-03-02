@@ -32,18 +32,6 @@ void io_uring_cleanup(feb_io_uring_t *ctx) {
     }
 }
 
-static int parse_event_mask(const char *event_str) {
-    if (strcmp(event_str, "CLOSE_WRITE") == 0) return FAN_CLOSE_WRITE;
-    if (strcmp(event_str, "MOVED_TO") == 0) return FAN_MOVED_TO;
-    if (strcmp(event_str, "MOVED_FROM") == 0) return FAN_MOVED_FROM;
-    if (strcmp(event_str, "CREATE") == 0) return FAN_CREATE;
-    if (strcmp(event_str, "DELETE") == 0) return FAN_DELETE;
-    if (strcmp(event_str, "MODIFY") == 0) return FAN_MODIFY;
-    if (strcmp(event_str, "CLOSE") == 0) return FAN_CLOSE;
-    if (strcmp(event_str, "OPEN") == 0) return FAN_OPEN;
-    return 0;
-}
-
 static uint32_t build_event_mask(feb_config_t *config) {
     uint32_t mask = FAN_CLOSE_WRITE;
     

@@ -88,10 +88,10 @@ typedef struct {
     feb_event_type_t event_type;       // 事件类型
 } feb_event_t;
 
-// io_uring 上下文 (使用 void* 避免头文件依赖)
+// io_uring 上下文
 typedef struct {
     int ring_fd;
-    void *ring;
+    struct io_uring *ring;
 } feb_io_uring_t;
 
 // 模块接口声明
