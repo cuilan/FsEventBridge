@@ -8,6 +8,50 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <poll.h>
+#include <liburing.h>
+
+static feb_io_uring_t g_io_uring = {-1, NULL};
+
+int io_uring_init(feb_io_uring_t *ctx) {
+    if (ctx->ring_fd >= 0) return 0;
+    
+    int ret = io_uring_queue_init(32, &ctx->ring, 0);
+    if (ret < 0) {
+        LOG_ERROR("io_uring_queue_init failed: %s", strerror(-ret));
+        return -1;
+    }
+    ctx->ring_fd = 1;
+    return 0;
+}
+
+void io_uring_cleanup(feb_io_uring_t *ctx) {
+    if (ctx->ring) {
+        io_uring_queue_exit(&ctx->ring);
+        ctx->ring = NULL;
+        ctx->ring_fd = -1;
+    }
+}
+
+static int parse_event_mask(const char *event_str) {
+    if (strcmp(event_str, "CLOSE_WRITE") == 0) return FAN_CLOSE_WRITE;
+    if (strcmp(event_str, "MOVED_TO") == 0) return FAN_MOVED_TO;
+    if (strcmp(event_str, "MOVED_FROM") == 0) return FAN_MOVED_FROM;
+    if (strcmp(event_str, "CREATE") == 0) return FAN_CREATE;
+    if (strcmp(event_str, "DELETE") == 0) return FAN_DELETE;
+    if (strcmp(event_str, "MODIFY") == 0) return FAN_MODIFY;
+    if (strcmp(event_str, "CLOSE") == 0) return FAN_CLOSE;
+    if (strcmp(event_str, "OPEN") == 0) return FAN_OPEN;
+    return 0;
+}
+
+static uint32_t build_event_mask(feb_config_t *config) {
+    uint32_t mask = FAN_CLOSE_WRITE;
+    
+    if (config->event_mask != 0) {
+        mask = config->event_mask;
+    }
+    return mask;
+}
 
 // 初始化 fanotify 句柄
 int monitor_init(const feb_config_t *config) {
@@ -23,9 +67,7 @@ int monitor_init(const feb_config_t *config) {
     // 2. 设置监控标记 (递归监控的核心)
     // FAN_MARK_ADD: 添加新标记
     // FAN_MARK_FILESYSTEM: 监控整个文件系统 (实现递归的关键)
-    // FAN_CLOSE_WRITE: 关键！只捕获文件写完并关闭的事件
-    // uint64_t mask = FAN_CLOSE_WRITE | FAN_EVENT_ON_CHILD;
-    uint64_t mask = FAN_CLOSE_WRITE; // 对于 FAN_MARK_FILESYSTEM, 不需要 ON_CHILD
+    uint64_t mask = build_event_mask((feb_config_t *)config);
     unsigned int flags = FAN_MARK_ADD | FAN_MARK_FILESYSTEM;
 
     if (fanotify_mark(fan_fd, flags, mask, AT_FDCWD, config->monitor_path) == -1) {
@@ -34,19 +76,29 @@ int monitor_init(const feb_config_t *config) {
         return -1;
     }
 
+    // 3. 如果启用 io_uring，初始化
+    if (config->use_io_uring) {
+        if (io_uring_init(&g_io_uring) == 0) {
+            LOG_INFO("io_uring initialized successfully");
+        } else {
+            LOG_WARN("io_uring initialization failed, falling back to sync I/O");
+        }
+    }
+
     return fan_fd;
 }
 
 // 从文件描述符获取真实路径 (利用 /proc/self/fd)
-static void get_path_from_fd(int fd, char *path, size_t size) {
+static int get_path_from_fd(int fd, char *path, size_t size) {
     char procp[64];
     snprintf(procp, sizeof(procp), "/proc/self/fd/%d", fd);
     ssize_t len = readlink(procp, path, size - 1);
     if (len != -1) {
         path[len] = '\0';
-    } else {
-        strncpy(path, "unknown", size);
+        return 0;
     }
+    path[0] = '\0';
+    return -1;
 }
 
 // 简单的后缀名过滤
@@ -96,7 +148,12 @@ void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile s
                 feb_event_t event = {0};
                 
                 // 获取路径
-                get_path_from_fd(metadata->fd, event.path, sizeof(event.path));
+                if (get_path_from_fd(metadata->fd, event.path, sizeof(event.path)) != 0) {
+                    LOG_WARN("Failed to get path for fd %d, skipping event", metadata->fd);
+                    close(metadata->fd);
+                    metadata = FAN_EVENT_NEXT(metadata, len);
+                    continue;
+                }
                 
                 // 检查是否在排除列表中
                 if (!should_skip(event.path, config)) {
@@ -109,6 +166,21 @@ void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile s
                     
                     event.mask = metadata->mask;
 
+                    // 解析事件类型
+                    if (metadata->mask & FAN_CLOSE_WRITE) {
+                        event.event_type = FEB_EVENT_CLOSE_WRITE;
+                    } else if (metadata->mask & FAN_MOVED_TO) {
+                        event.event_type = FEB_EVENT_MOVED_TO;
+                    } else if (metadata->mask & FAN_MOVED_FROM) {
+                        event.event_type = FEB_EVENT_MOVED_FROM;
+                    } else if (metadata->mask & FAN_CREATE) {
+                        event.event_type = FEB_EVENT_CREATE;
+                    } else if (metadata->mask & FAN_DELETE) {
+                        event.event_type = FEB_EVENT_DELETE;
+                    } else if (metadata->mask & FAN_MODIFY) {
+                        event.event_type = FEB_EVENT_MODIFY;
+                    }
+
                     // 分发给 IPC 模块
                     ipc_broadcast(ipc_fd, &event);
                     
@@ -120,6 +192,9 @@ void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile s
             metadata = FAN_EVENT_NEXT(metadata, len);
         }
     }
+    
+    // 清理 io_uring
+    io_uring_cleanup(&g_io_uring);
 }
 
 void monitor_cleanup(int fan_fd) {

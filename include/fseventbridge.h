@@ -59,6 +59,9 @@ typedef struct {
     bool use_io_uring;                 // 是否启用 io_uring 优化
     feb_log_level_t log_level;         // 日志级别
     
+    // 监控的事件类型
+    uint32_t event_mask;              // fanotify 事件掩码
+    
     // 过滤规则
     char **exclude_exts;               // 排除的扩展名列表
     int exclude_exts_count;
@@ -66,18 +69,39 @@ typedef struct {
     int exclude_paths_count;
 } feb_config_t;
 
+// 文件事件类型枚举
+typedef enum {
+    FEB_EVENT_CLOSE_WRITE = 0,
+    FEB_EVENT_MOVED_TO,
+    FEB_EVENT_MOVED_FROM,
+    FEB_EVENT_CREATE,
+    FEB_EVENT_DELETE,
+    FEB_EVENT_MODIFY
+} feb_event_type_t;
+
 // 文件事件模型
 typedef struct {
     char path[FEB_MAX_PATH];           // 发生变动的文件路径，非指针，牺牲栈空间，减少了内存碎片和 malloc 失败的风险
     uint64_t size;                     // 文件当前大小
     int64_t timestamp;                 // 事件发生的时间戳 (Unix Epoch)
     uint32_t mask;                     // 内核原始事件掩码 (fanotify mask)
+    feb_event_type_t event_type;       // 事件类型
 } feb_event_t;
+
+// io_uring 上下文 (使用 void* 避免头文件依赖)
+typedef struct {
+    int ring_fd;
+    void *ring;
+} feb_io_uring_t;
 
 // 模块接口声明
 void print_usage(const char *prog_name);
 bool config_load(feb_config_t *config, const char *path);
 void config_destroy(feb_config_t *config);
+
+// io_uring 初始化/销毁
+int io_uring_init(feb_io_uring_t *ctx);
+void io_uring_cleanup(feb_io_uring_t *ctx);
 
 // 工具函数
 ssize_t escape_json_string(char *dest, size_t size, const char *src);

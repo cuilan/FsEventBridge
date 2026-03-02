@@ -8,13 +8,34 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#define MAX_CLIENTS 16
+#define INITIAL_CLIENTS 16
+#define MAX_CLIENTS 128
+#define GROW_FACTOR 2
 
-// 内部结构：管理连接的客户端
-static struct {
-    int fds[MAX_CLIENTS];
+typedef struct {
+    int *fds;
+    int capacity;
     int count;
-} clients = {.count = 0};
+} client_manager_t;
+
+static client_manager_t clients = {.fds = NULL, .capacity = 0, .count = 0};
+
+static void grow_clients(void) {
+    if (clients.count >= clients.capacity && clients.capacity < MAX_CLIENTS) {
+        int new_cap = clients.capacity == 0 ? INITIAL_CLIENTS : clients.capacity * GROW_FACTOR;
+        if (new_cap > MAX_CLIENTS) new_cap = MAX_CLIENTS;
+        
+        int *new_fds = realloc(clients.fds, sizeof(int) * new_cap);
+        if (new_fds) {
+            for (int i = clients.capacity; i < new_cap; i++) {
+                new_fds[i] = -1;
+            }
+            clients.fds = new_fds;
+            clients.capacity = new_cap;
+            LOG_INFO("Client capacity grew to %d", new_cap);
+        }
+    }
+}
 
 // 初始化 Unix Domain Socket 服务器
 int ipc_init(const char *socket_path) {
@@ -48,7 +69,10 @@ int ipc_init(const char *socket_path) {
         return -1;
     }
 
-    for (int i = 0; i < MAX_CLIENTS; i++) clients.fds[i] = -1;
+    grow_clients();
+    for (int i = 0; i < clients.capacity; i++) {
+        clients.fds[i] = -1;
+    }
 
     return server_fd;
 }
@@ -64,9 +88,12 @@ void ipc_accept_clients(int server_fd) {
             break;
         }
 
+        // 尝试扩容
+        grow_clients();
+
         // 将新客户端加入列表
         bool added = false;
-        for (int i = 0; i < MAX_CLIENTS; i++) {
+        for (int i = 0; i < clients.capacity; i++) {
             if (clients.fds[i] == -1) {
                 clients.fds[i] = client_fd;
                 clients.count++;
@@ -77,7 +104,7 @@ void ipc_accept_clients(int server_fd) {
         }
 
         if (!added) {
-            LOG_WARN("[IPC] Client full, rejecting connection");
+            LOG_WARN("[IPC] Client limit reached (%d), rejecting connection", clients.capacity);
             close(client_fd);
         }
     }
@@ -116,7 +143,7 @@ void ipc_broadcast(int server_fd, const feb_event_t *event) {
     int json_len = (int)current_len;
 
     // 3. 遍历客户端发送数据 (MSG_NOSIGNAL 标志，处理 破碎管道 (EPIPE) 错误)
-    for (int i = 0; i < MAX_CLIENTS; i++) {
+    for (int i = 0; i < clients.capacity; i++) {
         int fd = clients.fds[i];
         if (fd == -1) continue;
 
@@ -135,8 +162,14 @@ void ipc_broadcast(int server_fd, const feb_event_t *event) {
 }
 
 void ipc_cleanup(int server_fd, const char *socket_path) {
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clients.fds[i] != -1) close(clients.fds[i]);
+    if (clients.fds) {
+        for (int i = 0; i < clients.capacity; i++) {
+            if (clients.fds[i] != -1) close(clients.fds[i]);
+        }
+        free(clients.fds);
+        clients.fds = NULL;
+        clients.capacity = 0;
+        clients.count = 0;
     }
     close(server_fd);
     unlink(socket_path);
