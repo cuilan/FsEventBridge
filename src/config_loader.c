@@ -1,16 +1,17 @@
 #include "fseventbridge.h"
-#include "toml.h"  // 假设已经包含 tomlc99 源码
+#include "toml.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/fanotify.h>
 
 static void set_default_config(feb_config_t *config) {
     memset(config, 0, sizeof(feb_config_t));
-    // strncpy(config->monitor_path, "/tmp", FEB_MAX_PATH - 1);
     strncpy(config->socket_path, "/tmp/feb.sock", FEB_MAX_PATH - 1);
     config->recursive = true;
     config->use_io_uring = true;
     config->log_level = FEB_LOG_INFO;
+    config->event_mask = FAN_CLOSE_WRITE;
 }
 
 bool config_load(feb_config_t *config, const char *path) {
@@ -77,6 +78,25 @@ bool config_load(feb_config_t *config, const char *path) {
             for (int i = 0; i < config->exclude_paths_count; i++) {
                 toml_datum_t path = toml_string_at(excl_paths, i);
                 if (path.ok) config->exclude_paths[i] = path.u.s;
+            }
+        }
+
+        // 解析事件列表
+        toml_array_t *events = toml_array_in(monitor, "events");
+        if (events) {
+            config->event_mask = 0;
+            int event_count = toml_array_nelem(events);
+            for (int i = 0; i < event_count; i++) {
+                toml_datum_t evt = toml_string_at(events, i);
+                if (evt.ok) {
+                    if (strcmp(evt.u.s, "CLOSE_WRITE") == 0) config->event_mask |= FAN_CLOSE_WRITE;
+                    else if (strcmp(evt.u.s, "MOVED_TO") == 0) config->event_mask |= FAN_MOVED_TO;
+                    else if (strcmp(evt.u.s, "MOVED_FROM") == 0) config->event_mask |= FAN_MOVED_FROM;
+                    else if (strcmp(evt.u.s, "CREATE") == 0) config->event_mask |= FAN_CREATE;
+                    else if (strcmp(evt.u.s, "DELETE") == 0) config->event_mask |= FAN_DELETE;
+                    else if (strcmp(evt.u.s, "MODIFY") == 0) config->event_mask |= FAN_MODIFY;
+                    free(evt.u.s);
+                }
             }
         }
     }
