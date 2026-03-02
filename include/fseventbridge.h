@@ -8,6 +8,7 @@
 #include <time.h>
 #include <errno.h>
 #include <string.h>
+#include <liburing.h>
 
 // 限制与定义
 #define FEB_MAX_PATH PATH_MAX
@@ -91,7 +92,7 @@ typedef struct {
 // io_uring 上下文
 typedef struct {
     int ring_fd;
-    struct io_uring *ring;
+    struct io_uring ring;
 } feb_io_uring_t;
 
 // 模块接口声明
