@@ -10,7 +10,7 @@
 #include <poll.h>
 #include <liburing.h>
 
-static feb_io_uring_t g_io_uring = {-1, NULL};
+static feb_io_uring_t g_io_uring = {0, {0}};
 
 int io_uring_init(feb_io_uring_t *ctx) {
     if (ctx->ring_fd >= 0) return 0;
@@ -25,9 +25,8 @@ int io_uring_init(feb_io_uring_t *ctx) {
 }
 
 void io_uring_cleanup(feb_io_uring_t *ctx) {
-    if (ctx->ring) {
+    if (ctx->ring_fd >= 0) {
         io_uring_queue_exit(&ctx->ring);
-        ctx->ring = NULL;
         ctx->ring_fd = -1;
     }
 }
