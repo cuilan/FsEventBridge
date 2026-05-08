@@ -1,0 +1,3 @@
+[monitor]
+path = "/tmp/febtest"
+exclude_path = ["/tmp/febtest/cache", "", "/tmp/febtest/legacy"]

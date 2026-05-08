@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  package:
+    name: build .deb / .rpm
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build & packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            build-essential \
+            pkg-config \
+            liburing-dev \
+            libsystemd-dev \
+            rpm
+
+      - name: Configure & build
+        run: |
+          cmake -S . -B build
+          cmake --build build -j"$(nproc)"
+
+      - name: Run unit tests before packaging
+        run: bash tests/run.sh --type unit
+
+      - name: Generate packages (cpack)
+        working-directory: build
+        run: cpack
+
+      - name: Upload packages as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: |
+            build/*.deb
+            build/*.rpm
+          if-no-files-found: error
+
+      - name: Attach packages to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/*.deb
+            build/*.rpm
+          draft: false
+          prerelease: false
+          generate_release_notes: true

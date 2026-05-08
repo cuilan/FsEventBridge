@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: build & test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build & test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            build-essential \
+            pkg-config \
+            liburing-dev \
+            libsystemd-dev \
+            python3
+
+      - name: Configure & build
+        run: |
+          cmake -S . -B build
+          cmake --build build -j"$(nproc)"
+
+      - name: Unit tests (no privilege)
+        run: bash tests/run.sh --type unit
+
+      - name: E2E tests (privileged via sudo)
+        run: |
+          # GitHub-hosted Ubuntu runners support fanotify when invoked with sudo.
+          # 在受限环境（fanotify 不可用）时，run.sh 会以 SKIP 退出（rc=77）
+          set +e
+          sudo -E env "PATH=$PATH" bash tests/run.sh --type e2e
+          rc=$?
+          set -e
+          if [ "$rc" -eq 77 ]; then
+            echo "::warning::e2e suite skipped (fanotify unavailable on this runner)"
+            exit 0
+          fi
+          exit "$rc"
+
+      - name: ctest summary
+        run: ctest --test-dir build --output-on-failure || true

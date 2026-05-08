@@ -1,15 +1,36 @@
+# FsEventBridge 配置示例
+# 命令行参数（CLI）会覆盖此文件中的对应字段
+
 [server]
+# 对外暴露的 Unix Domain Socket 路径
 socket_path = "/tmp/feb.sock"
+# 日志级别：debug / info / warn / error
 log_level = "info"
 
 [monitor]
+# 监控目标路径（必填；也可由 -d/--dir 提供）
 path = "/tmp"
+
+# 当前实现使用 fanotify FAN_MARK_FILESYSTEM 监听整个文件系统层级，
+# 此字段保留用于未来切换到“仅子目录树”模式
 recursive = true
-events = ["CLOSE_WRITE", "MOVED_TO"]
+
+# 关注的事件类型，可多选
+# 当前可用：CLOSE_WRITE / MODIFY
+# 受限：CREATE / DELETE / MOVED_FROM / MOVED_TO 需要内核 FAN_REPORT_FID 模式，
+#       该模式尚未实现，配置中若出现这些事件，运行时会被自动剔除并告警
+events = ["CLOSE_WRITE"]
+
+# 按扩展名排除（注意要带前导 '.'）
 exclude_extensions = [".tmp", ".swp"]
-exclude_path = ["", ""]
+
+# 按路径前缀排除（命中前缀目录及其子树将被忽略）
+# 同时兼容旧键名 exclude_path
+exclude_paths = []
 
 [processor]
-# 启用 io_uring 加速
+# 是否启用 io_uring 优化（当前仅控制初始化；事件主路径暂未异步化）
 use_io_uring = true
+
+# 预留字段，未来用于工作线程池规模；当前实现尚未使用
 worker_threads = 4

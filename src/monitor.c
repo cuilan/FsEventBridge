@@ -31,11 +31,26 @@ void io_uring_cleanup(feb_io_uring_t *ctx) {
     }
 }
 
+// 这些事件位必须配合 fanotify_init(FAN_REPORT_FID) 才能在内核接受 mark
+// 当前实现暂未启用 FID 模式，因此遇到这些位时主动剔除并告警，避免 EINVAL
+#define FEB_FID_REQUIRED_MASK \
+    (FAN_CREATE | FAN_DELETE | FAN_MOVED_FROM | FAN_MOVED_TO)
+
 static uint32_t build_event_mask(feb_config_t *config) {
-    uint32_t mask = FAN_CLOSE_WRITE;
-    
-    if (config->event_mask != 0) {
-        mask = config->event_mask;
+    uint32_t mask = (config->event_mask != 0) ? config->event_mask : FAN_CLOSE_WRITE;
+
+    uint32_t fid_bits = mask & FEB_FID_REQUIRED_MASK;
+    if (fid_bits) {
+        LOG_WARN("Stripping events that require FAN_REPORT_FID "
+                 "(CREATE/DELETE/MOVED_FROM/MOVED_TO): mask 0x%x. "
+                 "These events will be supported once FID mode is enabled.",
+                 fid_bits);
+        mask &= ~FEB_FID_REQUIRED_MASK;
+    }
+
+    if (mask == 0) {
+        LOG_WARN("No usable events in mask, falling back to FAN_CLOSE_WRITE");
+        mask = FAN_CLOSE_WRITE;
     }
     return mask;
 }
@@ -88,16 +103,39 @@ static int get_path_from_fd(int fd, char *path, size_t size) {
     return -1;
 }
 
-// 简单的后缀名过滤
-static bool should_skip(const char *path, const feb_config_t *config) {
-    if (config->exclude_exts_count == 0) return false;
-    
-    const char *dot = strrchr(path, '.');
-    if (!dot) return false;
+// 判断 path 是否处于 prefix 指向的目录子树下
+// 支持 prefix 末尾带不带 '/' 两种写法；空 prefix 视为不匹配
+static bool path_under_prefix(const char *path, const char *prefix) {
+    if (prefix == NULL || prefix[0] == '\0') return false;
 
-    for (int i = 0; i < config->exclude_exts_count; i++) {
-        if (strcmp(dot, config->exclude_exts[i]) == 0) return true;
+    size_t plen = strlen(prefix);
+    // 去除 prefix 末尾多余的 '/'，便于统一处理
+    while (plen > 1 && prefix[plen - 1] == '/') plen--;
+
+    if (strncmp(path, prefix, plen) != 0) return false;
+
+    // 命中边界要求：path 等于 prefix，或紧随其后是 '/'
+    char next = path[plen];
+    return next == '\0' || next == '/';
+}
+
+// 综合过滤：扩展名 + 路径前缀
+static bool should_skip(const char *path, const feb_config_t *config) {
+    // 路径前缀过滤
+    for (int i = 0; i < config->exclude_paths_count; i++) {
+        if (path_under_prefix(path, config->exclude_paths[i])) return true;
     }
+
+    // 扩展名过滤
+    if (config->exclude_exts_count > 0) {
+        const char *dot = strrchr(path, '.');
+        if (dot) {
+            for (int i = 0; i < config->exclude_exts_count; i++) {
+                if (strcmp(dot, config->exclude_exts[i]) == 0) return true;
+            }
+        }
+    }
+
     return false;
 }
 

@@ -1,0 +1,13 @@
+[server]
+socket_path = "/tmp/feb-test.sock"
+log_level = "warn"
+
+[monitor]
+path = "/tmp/febtest"
+recursive = true
+events = ["CLOSE_WRITE", "MODIFY"]
+exclude_extensions = [".bak"]
+exclude_paths = ["/tmp/febtest/skip"]
+
+[processor]
+use_io_uring = false

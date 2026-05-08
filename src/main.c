@@ -5,6 +5,7 @@
 #include <getopt.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/fanotify.h>
 #include <systemd/sd-daemon.h>
 
 // 默认日志级别
@@ -42,6 +43,66 @@ static void free_string_array(char ***array, int *count) {
     *count = 0;
 }
 
+// 把日志级别映射为可读字符串
+static const char *log_level_str(feb_log_level_t lvl) {
+    switch (lvl) {
+        case FEB_LOG_DEBUG: return "debug";
+        case FEB_LOG_INFO:  return "info";
+        case FEB_LOG_WARN:  return "warn";
+        case FEB_LOG_ERROR: return "error";
+        default:            return "unknown";
+    }
+}
+
+// 把字符串数组按逗号拼接到 stdout，用于 dry-run 输出
+static void print_string_array(char **arr, int count) {
+    for (int i = 0; i < count; i++) {
+        if (i > 0) fputc(',', stdout);
+        fputs(arr[i], stdout);
+    }
+    fputc('\n', stdout);
+}
+
+// 把 fanotify event_mask 解码为可读名称数组（用于 dry-run 输出）
+static void print_event_names(uint32_t mask) {
+    bool first = true;
+    struct {
+        uint32_t bit;
+        const char *name;
+    } table[] = {
+        { FAN_CLOSE_WRITE, "CLOSE_WRITE" },
+        { FAN_MODIFY,      "MODIFY"      },
+        { FAN_MOVED_TO,    "MOVED_TO"    },
+        { FAN_MOVED_FROM,  "MOVED_FROM"  },
+        { FAN_CREATE,      "CREATE"      },
+        { FAN_DELETE,      "DELETE"      },
+    };
+    for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
+        if (mask & table[i].bit) {
+            if (!first) fputc(',', stdout);
+            fputs(table[i].name, stdout);
+            first = false;
+        }
+    }
+    fputc('\n', stdout);
+}
+
+// dry-run：把已解析的最终配置打印到 stdout（用于自动化测试断言）
+static void print_resolved_config(const feb_config_t *config) {
+    printf("monitor_path=%s\n",  config->monitor_path);
+    printf("socket_path=%s\n",   config->socket_path);
+    printf("recursive=%s\n",     config->recursive ? "true" : "false");
+    printf("use_io_uring=%s\n",  config->use_io_uring ? "true" : "false");
+    printf("log_level=%s\n",     log_level_str(config->log_level));
+    printf("event_mask=0x%x\n",  config->event_mask);
+    printf("events=");
+    print_event_names(config->event_mask);
+    printf("exclude_extensions=");
+    print_string_array(config->exclude_exts, config->exclude_exts_count);
+    printf("exclude_paths=");
+    print_string_array(config->exclude_paths, config->exclude_paths_count);
+}
+
 // 帮助信息
 void print_usage(const char *prog_name) {
     printf("\n");
@@ -73,9 +134,11 @@ void print_usage(const char *prog_name) {
     printf("  -s, --socket PATH    Specify the Unix Socket path (default: /tmp/feb.sock)\n");
     printf("  -r, --recursive      Enable recursive monitoring (default: false)\n");
     printf("  -i, --io-uring       Enable io_uring optimization (default: true)\n");
+    printf("      --no-io-uring    Disable io_uring optimization (overrides config)\n");
     printf("  -l, --log-level      Specify the log level (debug, info, warn, error)\n");
     printf("  -e, --exclude-ext    Specify the exclude extension (multiple can be specified)\n");
     printf("  -x, --exclude-path   Specify the exclude path (multiple can be specified)\n");
+    printf("      --check-config   Print resolved configuration and exit (no monitoring)\n");
     printf("  -v, --version        Display version information\n");
     printf("  -h, --help           Display this help information\n\n");
 }
@@ -86,15 +149,25 @@ int main(int argc, char **argv) {
     int opt;
 
     // 1. 定义长选项
+    // 仅长参数选项使用 256 起的虚拟短码，避免与 ASCII 短选项冲突
+    enum {
+        OPT_NO_IO_URING = 0x100,
+        OPT_CHECK_CONFIG
+    };
+
+    bool check_config = false;
+
     static struct option long_options[] = {
         {"config",       required_argument, 0, 'c'},
         {"dir",          required_argument, 0, 'd'},
         {"socket",       required_argument, 0, 's'},
         {"recursive",    no_argument,       0, 'r'},
         {"io-uring",     no_argument,       0, 'i'},
+        {"no-io-uring",  no_argument,       0, OPT_NO_IO_URING},
         {"log-level",    required_argument, 0, 'l'},
         {"exclude-ext",  required_argument, 0, 'e'},
         {"exclude-path", required_argument, 0, 'x'},
+        {"check-config", no_argument,       0, OPT_CHECK_CONFIG},
         {"version",      no_argument,       0, 'v'},
         {"help",         no_argument,       0, 'h'},
         {0, 0, 0, 0}
@@ -139,6 +212,12 @@ int main(int argc, char **argv) {
             case 'i':
                 config.use_io_uring = true;
                 break;
+            case OPT_NO_IO_URING:
+                config.use_io_uring = false;
+                break;
+            case OPT_CHECK_CONFIG:
+                check_config = true;
+                break;
             case 'l':
                 if (strcmp(optarg, "debug") == 0) config.log_level = FEB_LOG_DEBUG;
                 else if (strcmp(optarg, "info") == 0) config.log_level = FEB_LOG_INFO;
@@ -164,6 +243,13 @@ int main(int argc, char **argv) {
 
     // 同步日志级别到全局变量
     SET_LOG_LEVEL(config.log_level);
+
+    // 干跑：仅打印解析后的配置并退出，便于在没有 root 的环境下做自动化验证
+    if (check_config) {
+        print_resolved_config(&config);
+        config_destroy(&config);
+        return 0;
+    }
 
     LOG_DEBUG("FsEventBridge is starting...");
 

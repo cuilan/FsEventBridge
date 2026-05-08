@@ -7,40 +7,33 @@ FsEventBridge 是一款基于 Linux 内核 `fanotify` `io_uring` 等技术开发
 ## 🚀 核心特性
 
 * **内核级递归监控**：利用 `fanotify` 机制，支持对整个挂载点或大型目录树进行实时监控，无需像 `inotify` 那样手动递归添加监听。
-* **NFS文件监控**：无需 NFS 服务端支持，实现对本机 NFS 客户端的文件监控。
+* **NFS 文件监控**：无需 NFS 服务端支持，实现对本机 NFS 客户端的文件监控。
 * **极致性能**：采用 **C17 标准** 编写，集成 `io_uring` 实现异步 I/O，确保在每秒产生数千个文件的卫星接收等工业场景下依然保持极低的 CPU 和内存占用。
-* **跨语言集成**：通过 `Unix Domain Socket` 发送 **NDJSON (Newline-Delimited JSON)**，完美对接 Go、Python、Java 等高性能微服务架构。
-* **工业级部署**：原生支持 **Systemd** 集成，提供标准的 `.deb` 和 `.rpm` 软件包封装，符合企业级运维规范。
-* **灵活配置**：支持命令行参数与 **TOML** 配置文件双重驱动，满足自动化脚本与守护进程化运行的不同需求。
-
----
-
-## 🏗 架构设计
-
-FsEventBridge 作为“桥梁”，将底层复杂的内核调用与上游灵活的业务逻辑解耦：
-
-1. **监听层 (C17/fanotify)**：在内核 VFS 层捕获 FAN_CLOSE_WRITE 事件，确保只有完整落盘的文件才会被触发。
-2. **处理层 (io_uring)**：异步读取文件元数据（如大小、解析文件名标识），避免阻塞监控主循环。
-3. **分发层 (IPC/UDS)**：将事件封装为 JSON 并推送到 Unix Domain Socket。
+* **跨语言集成**：通过 Unix Domain Socket 发送 **NDJSON（每行一条 JSON）**，便于 Go、Python、Java 等语言消费。
+* **工业级部署**：原生支持 **Systemd**，提供 `.deb` / `.rpm` 打包路径，贴合常见 Linux 运维方式。
+* **灵活配置**：支持命令行参数与 **TOML** 配置文件，适合脚本与常驻服务两种用法。
 
 ---
 
 ## 🛠 安装与构建
 
-### 依赖项
-* Linux Kernel >= 5.1 (推荐 6.x)
-* GCC >= 12 (支持 C17)
-* liburing
-* libsystemd
+### 依赖
 
-### 编译与打包
+* Linux Kernel >= 5.1（推荐 6.x）
+* GCC >= 12（支持 C17）
+* CMake、pkg-config
+* liburing、libsystemd（开发时需对应 `-dev` 包）
 
-```Bash
-mkdir build && cd build
+### 编译（及可选打包）
+
+也可使用仓库内脚本：`bash scripts/build.sh`
+
+```bash
+mkdir -p build && cd build
 cmake ..
-make
+cmake --build . -j"$(nproc)"
 
-# 生成 .deb 或 .rpm 包
+# 可选：生成 Debian / RPM 安装包（需本机装有 cpack 相应生成器）
 cpack
 ```
 
@@ -48,44 +41,44 @@ cpack
 
 ## 📖 使用指南
 
-### 命令行模式
-快速监控指定目录：
+### 运行权限（必读）
 
-```Bash
-./FsEventBridge -d /data/sate -s /tmp/feb.sock
+监听文件事件需要 **`CAP_SYS_ADMIN`**。任选其一：
+
+* 临时：`sudo ./FsEventBridge …`
+* 开发便利（每次重新编译后需重设）：`sudo setcap cap_sys_admin+ep ./build/FsEventBridge`，之后可直接以普通用户运行。
+
+### 命令行示例
+
+监控目录、指定 Socket，并打印调试日志：
+
+```bash
+sudo ./FsEventBridge -d /data/sate -s /tmp/feb.sock -l debug -r
 ```
 
-### 配置文件模式
-使用 TOML 配置文件运行（支持 Systemd 管理）：
+常用选项（完整列表见 `./FsEventBridge --help`）：
 
-```Bash
-./FsEventBridge -c /etc/FsEventBridge/config.toml
-```
+| 选项 | 作用 |
+|------|------|
+| `-d, --dir` | 监控路径 |
+| `-s, --socket` | UDS 路径（默认 `/tmp/feb.sock`） |
+| `-c, --config` | TOML 配置文件 |
+| `-r, --recursive` | 递归相关配置项（与 fanotify 行为配合，详见帮助） |
+| `-l, --log-level` | `debug` / `info` / `warn` / `error` |
+| `-e, --exclude-ext` | 按扩展名排除（可重复） |
+| `-x, --exclude-path` | 按路径前缀排除（可重复） |
+| `-i, --io-uring` | 启用 io_uring 相关初始化 |
+| `--no-io-uring` | 关闭上述开关 |
+| `--check-config` | 加载配置后打印最终生效项并退出（无需 root） |
+| `-v, --version` | 版本信息 |
 
----
+配置文件与 CLI 可同时使用：**CLI 优先级更高**。
 
-## 🔗 上游集成示例 (Go)
-由于 FEB 输出标准化的 JSON 流，上游程序可以极其简单地接入：
+### 配置文件示例
 
-```Go
-// 消费来自 FsEventBridge 的事件
-conn, _ := net.Dial("unix", "/tmp/feb.sock")
-scanner := bufio.NewScanner(conn)
+仓库内可参考 [`configs/config.toml`](configs/config.toml)。极简示例：
 
-for scanner.Scan() {
-    var event MyFileEvent
-    json.Unmarshal(scanner.Bytes(), &event)
-    
-    // 执行数据解析、业务逻辑
-    processSatelliteData(event.Path)
-}
-```
-
----
-
-## 📝 配置文件示例 (TOML)
-
-```Ini, TOML
+```toml
 [server]
 socket_path = "/tmp/feb.sock"
 log_level = "info"
@@ -93,14 +86,54 @@ log_level = "info"
 [monitor]
 path = "/data/sate"
 recursive = true
-events = ["CLOSE_WRITE", "MOVED_TO"]
+events = ["CLOSE_WRITE"]
 exclude_extensions = [".tmp", ".swp"]
+exclude_paths = ["/data/sate/cache"]
 
 [processor]
-# 启用 io_uring 加速
 use_io_uring = true
-worker_threads = 4
 ```
 
+使用方式：
+
+```bash
+sudo ./FsEventBridge -c /path/to/config.toml
+```
+
+### 消费事件（NDJSON）
+
+先启动 FsEventBridge，再在业务侧连接同一 UDS，按行读取 JSON。仓库提供示例客户端：`tests/test_client.py`、`tests/test_client.go`。
+
+---
+
+## 🔗 上游集成示例 (Go)
+
+```go
+conn, _ := net.Dial("unix", "/tmp/feb.sock")
+scanner := bufio.NewScanner(conn)
+
+for scanner.Scan() {
+    var event MyFileEvent
+    json.Unmarshal(scanner.Bytes(), &event)
+    processSatelliteData(event.Path)
+}
+```
+
+---
+
+## 🧪 开发与回归测试
+
+本地构建后：
+
+```bash
+bash tests/run.sh --milestone 0 --type unit    # 无需 root
+sudo -E bash tests/run.sh --milestone 0 --type e2e
+```
+
+说明见 [`tests/README.md`](tests/README.md)。路线图见 [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md)。
+
+---
+
 ## ⚖️ 开源协议
-本项目采用 Apache-2.0 协议开源。
+
+本项目采用 **Apache-2.0** 协议开源。

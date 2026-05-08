@@ -46,7 +46,33 @@ install(TARGETS FsEventBridge DESTINATION /usr/bin)
 install(FILES configs/config.toml DESTINATION /etc/FsEventBridge)
 install(FILES package/FsEventBridge.service DESTINATION /lib/systemd/system)
 
-# --- 5. CPack 自动打包配置 (生成 .deb 和 .rpm) ---
+# --- 5. 测试集成 (ctest) ---
+# 通过 tests/run.sh 串联各里程碑的 unit / e2e 测试
+# unit:   不需要 root，直接跑
+# e2e:    需要 fanotify 权限，沙箱 / 受限环境会自动 SKIP
+enable_testing()
+
+add_test(
+    NAME milestone0_unit
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/run.sh --milestone 0 --type unit
+)
+set_tests_properties(milestone0_unit PROPERTIES
+    LABELS "milestone0;unit"
+    SKIP_RETURN_CODE 77
+    ENVIRONMENT "FEB_BIN=$<TARGET_FILE:FsEventBridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
+)
+
+add_test(
+    NAME milestone0_e2e
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/run.sh --milestone 0 --type e2e
+)
+set_tests_properties(milestone0_e2e PROPERTIES
+    LABELS "milestone0;e2e"
+    SKIP_RETURN_CODE 77
+    ENVIRONMENT "FEB_BIN=$<TARGET_FILE:FsEventBridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
+)
+
+# --- 6. CPack 自动打包配置 (生成 .deb 和 .rpm) ---
 
 set(CPACK_PACKAGE_NAME "fseventbridge")
 set(CPACK_PACKAGE_VERSION "${FEB_VERSION}")
