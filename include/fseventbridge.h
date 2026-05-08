@@ -70,9 +70,10 @@ typedef struct {
     int exclude_paths_count;
 } feb_config_t;
 
-// 文件事件类型枚举
+// 文件事件类型枚举（与 NDJSON 中 type 整数一致；首个值为未知）
 typedef enum {
-    FEB_EVENT_CLOSE_WRITE = 0,
+    FEB_EVENT_UNKNOWN = 0,
+    FEB_EVENT_CLOSE_WRITE,
     FEB_EVENT_MOVED_TO,
     FEB_EVENT_MOVED_FROM,
     FEB_EVENT_CREATE,
@@ -83,10 +84,13 @@ typedef enum {
 // 文件事件模型
 typedef struct {
     char path[FEB_MAX_PATH];           // 发生变动的文件路径，非指针，牺牲栈空间，减少了内存碎片和 malloc 失败的风险
-    uint64_t size;                     // 文件当前大小
-    int64_t timestamp;                 // 事件发生的时间戳 (Unix Epoch)
+    uint64_t size;                     // 文件当前大小（字节）
+    // ts：网关处理该 fanotify 事件时的墙钟时间（CLOCK_REALTIME，Unix 纪元秒）
+    int64_t ts;
+    // mtime：fstat 得到的文件内容最后修改时间（st_mtim 秒）；fstat 失败时为 -1
+    int64_t mtime;
     uint32_t mask;                     // 内核原始事件掩码 (fanotify mask)
-    feb_event_type_t event_type;       // 事件类型
+    feb_event_type_t event_type;       // 事件类型枚举
 } feb_event_t;
 
 // io_uring 上下文
@@ -122,6 +126,9 @@ void json_end_object(json_writer_t *w);
 void json_key_string(json_writer_t *w, const char *key, const char *val);
 void json_key_uint(json_writer_t *w, const char *key, uint64_t val);
 void json_key_int(json_writer_t *w, const char *key, int64_t val);
+
+// 事件类型 -> 可读名称（与 NDJSON 中 event 字段一致）
+const char *feb_event_name(feb_event_type_t t);
 
 int monitor_init(const feb_config_t *config);
 void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile sig_atomic_t *running);

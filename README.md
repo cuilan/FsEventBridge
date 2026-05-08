@@ -1,17 +1,18 @@
 # FsEventBridge (FEB)
 
-FsEventBridge 是一款基于 Linux 内核 `fanotify` `io_uring` 等技术开发的高性能文件系统事件网关。它旨在解决大规模文件监控场景下的性能瓶颈，并将底层内核事件转换为易于消费的 JSON 流，通过 `Unix Domain Socket (UDS)` 跨语言分发给 Go、Java、Python 等上游业务逻辑。
+FsEventBridge 是一款基于 Linux 内核 `fanotify`、`io_uring`（可选）等能力的文件系统事件网关，将内核文件事件转为 **NDJSON** 流，经 **Unix Domain Socket** 分发给 Go、Python、Java 等上游。
 
 ---
 
 ## 🚀 核心特性
 
-* **内核级递归监控**：利用 `fanotify` 机制，支持对整个挂载点或大型目录树进行实时监控，无需像 `inotify` 那样手动递归添加监听。
-* **NFS 文件监控**：无需 NFS 服务端支持，实现对本机 NFS 客户端的文件监控。
-* **极致性能**：采用 **C17 标准** 编写，集成 `io_uring` 实现异步 I/O，确保在每秒产生数千个文件的卫星接收等工业场景下依然保持极低的 CPU 和内存占用。
-* **跨语言集成**：通过 Unix Domain Socket 发送 **NDJSON（每行一条 JSON）**，便于 Go、Python、Java 等语言消费。
-* **工业级部署**：原生支持 **Systemd**，提供 `.deb` / `.rpm` 打包路径，贴合常见 Linux 运维方式。
-* **灵活配置**：支持命令行参数与 **TOML** 配置文件，适合脚本与常驻服务两种用法。
+* **内核级大范围监控**：基于 `fanotify` 在**锚点路径所在的文件系统/挂载**上打标，避免 `inotify` 那样对每个子目录逐个 `add_watch`；实际覆盖范围取决于内核与挂载类型（见下文 NFS 说明）。
+* **NFS 客户端挂载**：**无需改动 NFS 服务端**；在**本机 NFS 客户端挂载点**上，事件是否出现、是否齐全，由 **Linux 内核 + NFS 客户端实现（及 NFS 版本）**共同决定。**本仓库当前没有单独的「NFS 专用协议」代码路径**——与同机 ext4/XFS 等相比，**不能保证**事件语义与覆盖率完全一致，需要在目标内核上实测（详见 `DEVELOPMENT_PLAN.md` 中的兼容性验证）。
+* **C17 + 严控告警**：源码按 **ISO C17**（`CMake` 设定 `C_STANDARD 17`，并启用 `-Wall -Wextra -Werror`，另使用 `_GNU_SOURCE` 以获得 Linux 必需的 POSIX/GNU API）。
+* **高性能取向**：链路以 **`fanotify` + 精简 NDJSON 推送**为主；已链接 **`liburing`** 并支持初始化，**异步 I/O 在热路径上的落地仍在演进**（见路线图 Milestone 2），适合作为后续压测与优化的基线。
+* **跨语言集成**：通过 Unix Domain Socket 发送 **NDJSON（每行一条 JSON）**，便于多语言消费。
+* **工业级部署**：集成 **Systemd** 就绪通知，提供 **`.deb` / `.rpm`** 打包路径，贴合常见 Linux 运维方式。
+* **灵活配置**：支持命令行与 **TOML** 配置文件，适合脚本与常驻服务两种用法。
 
 ---
 
@@ -102,7 +103,19 @@ sudo ./FsEventBridge -c /path/to/config.toml
 
 ### 消费事件（NDJSON）
 
-先启动 FsEventBridge，再在业务侧连接同一 UDS，按行读取 JSON。仓库提供示例客户端：`tests/test_client.py`、`tests/test_client.go`。
+先启动 FsEventBridge，再在业务侧连接同一 UDS，按行读取 JSON（一行一个对象）。示例客户端：`tests/test_client.py`、`tests/test_client.go`。
+
+每条事件对象的字段：
+
+| 字段 | 含义 |
+|------|------|
+| `path` | 文件路径 |
+| `event` | 可读事件名，如 `CLOSE_WRITE`、`MODIFY` |
+| `type` | 与 `event` 对应的整数枚举（`UNKNOWN` = 0，其后按 CLOSE_WRITE、MOVED_TO … 递增） |
+| `size` | 当前文件大小（字节） |
+| `ts` | **网关观测时间**：处理该 fanotify 事件并完成元数据读取之后的墙钟时刻（Unix **秒**，`CLOCK_REALTIME`） |
+| `mtime` | 文件内容最后修改时间（`st_mtim` 秒）；`fstat` 失败时为 `-1` |
+| `mask` | fanotify 原始掩码（可与内核 `FAN_*` 对照，例如 `FAN_CLOSE_WRITE` 常为 `8`/`0x8`） |
 
 ---
 
@@ -113,7 +126,7 @@ conn, _ := net.Dial("unix", "/tmp/feb.sock")
 scanner := bufio.NewScanner(conn)
 
 for scanner.Scan() {
-    var event MyFileEvent
+    var event MyFileEvent // 按需映射 path / event / type / ts / mtime / mask 等字段
     json.Unmarshal(scanner.Bytes(), &event)
     processSatelliteData(event.Path)
 }
@@ -128,6 +141,7 @@ for scanner.Scan() {
 ```bash
 bash tests/run.sh --milestone 0 --type unit    # 无需 root
 sudo -E bash tests/run.sh --milestone 0 --type e2e
+sudo -E bash tests/run.sh --milestone 1 --type e2e   # NDJSON 语义回归
 ```
 
 说明见 [`tests/README.md`](tests/README.md)。路线图见 [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md)。

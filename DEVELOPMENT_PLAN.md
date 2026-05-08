@@ -59,42 +59,25 @@ CI / 发布：
 
 ---
 
-### Milestone 1：事件语义与输出模型增强（面向下游消费）
+### Milestone 1：事件语义与输出模型增强（面向下游消费） — 已完成
 
-目标：下游不再需要依赖 `mask` 位运算来理解事件，输出更稳定、更容易演进。
+目标：下游优先读 `event`/`type`，`ts`/`mtime` 语义固定，便于对流式数据做分析与排序。
 
-待办：
+已实现：
 
-- NDJSON 增加字段（保持向后兼容）：
-  - `event`：字符串类型（例如 `"CLOSE_WRITE"`）
-  - `type`：数值枚举（可选）
-- 明确 `ts` 的语义：
-  - 方案 A：保留 `mtime`，字段改名为 `mtime`，另增加真正的事件时间 `ts`
-  - 方案 B：`ts` 改为采集时间（例如 `clock_gettime(CLOCK_REALTIME)` 秒/毫秒），`mtime` 另加字段
-- 文档中提供 `mask` 常量对照与示例（尤其 `FAN_CLOSE_WRITE` 的 `0x8`）。
-- 启用 fanotify FID 模式以支持目录变更类事件：
-  - 背景：`FAN_CREATE` / `FAN_DELETE` / `FAN_MOVED_FROM` / `FAN_MOVED_TO` 等事件
-    在内核里要求 `fanotify_init` 同时设置 `FAN_REPORT_FID`（或 `FAN_REPORT_DIR_FID`），
-    否则 `fanotify_mark` 会以 `EINVAL` 失败。
-  - 当前实现：`build_event_mask` 会主动剔除这些事件并打印告警，
-    保证配置异常时不会让 `fanotify_mark` 失败，但也意味着这些事件“暂时无法上报”。
-  - 计划：在 `monitor_init` 中开启 FID 模式，按 `fanotify_event_info_fid`
-    解析事件，结合 `open_by_handle_at` 还原路径；同步在 NDJSON 中输出 `event` 字段。
+- NDJSON 字段：`path`、`event`（字符串）、`type`（整数枚举）、`size`、`ts`、`mtime`、`mask`。
+- **语义**：`ts` = 网关处理该事件并完成元数据读取后的 **CLOCK_REALTIME 纪元秒**；`mtime` = `fstat.st_mtim` 秒（失败 `-1`）。`UNKNOWN`/`0` 表示未能从 mask 识别类型。
+- `README.md` 中附有字段说明与 `mask` 与 `FAN_CLOSE_WRITE`(0x8) 对照提示。
 
-验收标准：
+测试：`tests/milestone1/e2e/01_ndjson_semantics.sh`、`ctest -L milestone1`。
 
-- 客户端收到的 JSON 中包含 `event`，并且与 `mask` 语义一致。
-- `ts/mtime` 字段在 README 与示例输出中可解释且一致。
-- 配置 `events = ["CLOSE_WRITE","MOVED_TO","CREATE","DELETE"]` 后，
-  程序能正常启动，且能在客户端看到对应的 `event` 字段。
+仍属后续里程碑（未在本版本实现）：
 
-建议测试：
-
-- 使用 Python/Go 客户端对 `event` 字段做断言（创建/写入/关闭、移动、删除等）。
+- **fanotify FID 模式**：用于在配置中启用 `CREATE`/`DELETE`/`MOVED_*` 等需 `FAN_REPORT_FID` 的事件；当前仍会剔除这些掩码位以免 `fanotify_mark` EINVAL（与 Milestone 0 行为一致）。
 
 ---
 
-### Milestone 2：真正接入 io_uring（把“优化”落到热路径）
+### Milestone 2：真正接入 io_uring（把「优化」落到热路径）
 
 目标：把元数据读取或后续可能的 I/O 操作异步化，降低主循环阻塞与抖动。
 
@@ -179,6 +162,53 @@ CI / 发布：
 验收标准：
 
 - 在干净环境安装 deb/rpm 后，服务可一键启动并产出可消费的 NDJSON。
+
+---
+
+### （建议）兼容性矩阵：本地 FS 与 NFS 客户端挂载
+
+**背景**：FsEventBridge 不向 NFS 服务端打补丁；它只在本机对已挂载路径使用 **`fanotify`**。能否获得与本地块设备上「同等完整」的事件，取决于 **内核是否在 NFS 客户端 VFS 路径上派发 fanotify 事件**。NFSv3/v4 与内核小版本之间历史上存在差异。
+
+**里程碑目标（偏验证，不靠应用层虚构事件）：**
+
+1. **文档**：在本文件或 README 中维护「已实测」矩阵（内核、NFS 版本、挂载选项、`fanotify_mark` 行为）。
+2. **可重复脚本**：`tests/` 或 `scripts/` 中增加依赖 **人工准备 NFS 挂载** 的流程 + 冒烟断言 NDJSON。
+3. **结论边界**：若某组合下内核事件缺失，归因为 **环境/内核限制**，不是 FEB 单方「实现 NFS 协议」能补全。
+
+**与 Milestone 4 的关系**：挂载范围、`FAN_MARK_*` 与文件系统类型紧密相关，可合并规划。
+
+---
+
+### （建议）性能测试与回归如何做
+
+在 Milestone 2（或热路径定型）之后做系统压测更有意义；此前也可做轻量冒烟指标防退化。
+
+**1. 指标建议**
+
+| 维度 | 说明 |
+|------|------|
+| 吞吐 | listener 实际读到的 events/sec |
+| CPU | `/usr/bin/time -v`、`perf stat` |
+| 内存 | RSS 峰值、长期是否爬升 |
+| 延迟（可选） | CLOSE 到 NDJSON 的粗粒度分布 |
+
+**2. 负载类型**
+
+- 大量小文件：create / 短写 / close（顺序或并行）。
+- 少量大文件：追加写 + close。
+- 混合噪声：同 FS 上干扰进程，验证过滤与稳定性。
+
+记录并发、时长、路径、`uname -r`、`mount` 以保证可重复。
+
+**3. 基线与对照**
+
+同一挂载对比不同 git SHA；可选最小 fanotify Demo 做数量级对照（语义不同仅供参考）。
+
+**4. CI**
+
+托管 Runner **不宜作绝对性能数据源**；性能数字在目标真机跑 `scripts/bench-*.sh`，CI 侧重功能回归。
+
+---
 
 ## 风险清单与建议
 

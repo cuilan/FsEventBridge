@@ -115,3 +115,18 @@ void json_key_int(json_writer_t *w, const char *key, int64_t val) {
     json_comma(w);
     json_append(w, "\"%s\":%ld", key, val);
 }
+
+// 事件类型 -> 可读字符串（与 NDJSON 字段 event 保持一致）
+const char *feb_event_name(feb_event_type_t t) {
+    switch (t) {
+        case FEB_EVENT_CLOSE_WRITE: return "CLOSE_WRITE";
+        case FEB_EVENT_MOVED_TO:    return "MOVED_TO";
+        case FEB_EVENT_MOVED_FROM:  return "MOVED_FROM";
+        case FEB_EVENT_CREATE:      return "CREATE";
+        case FEB_EVENT_DELETE:      return "DELETE";
+        case FEB_EVENT_MODIFY:      return "MODIFY";
+        case FEB_EVENT_UNKNOWN:
+        default:                    return "UNKNOWN";
+    }
+}
+

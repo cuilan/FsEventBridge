@@ -8,6 +8,8 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <poll.h>
+#include <time.h>
+#include <inttypes.h>
 #include <liburing.h>
 
 static feb_io_uring_t g_io_uring = { .ring_fd = -1 };
@@ -182,16 +184,18 @@ void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile s
                 
                 // 检查是否在排除列表中
                 if (!should_skip(event.path, config)) {
-                    // 获取文件元数据 (大小、时间)
+                    event.event_type = FEB_EVENT_UNKNOWN;
+                    event.mtime = -1;
+
                     struct stat st;
                     if (fstat(metadata->fd, &st) == 0) {
                         event.size = (uint64_t)st.st_size;
-                        event.timestamp = (int64_t)st.st_mtim.tv_sec;
+                        event.mtime = (int64_t)st.st_mtim.tv_sec;
                     }
-                    
+
                     event.mask = metadata->mask;
 
-                    // 解析事件类型
+                    // 解析事件类型（与 fanotify mask 对应）
                     if (metadata->mask & FAN_CLOSE_WRITE) {
                         event.event_type = FEB_EVENT_CLOSE_WRITE;
                     } else if (metadata->mask & FAN_MOVED_TO) {
@@ -206,10 +210,24 @@ void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile s
                         event.event_type = FEB_EVENT_MODIFY;
                     }
 
-                    // 分发给 IPC 模块
+                    // 网关观测时间：事件进入用户态并完成元数据读取后的墙钟时刻
+                    struct timespec rt;
+                    if (clock_gettime(CLOCK_REALTIME, &rt) == 0) {
+                        event.ts = (int64_t)rt.tv_sec;
+                    } else {
+                        event.ts = (int64_t)time(NULL);
+                    }
+
                     ipc_broadcast(ipc_fd, &event);
-                    
-                    LOG_DEBUG("Event sent: %s (Size: %lu)", event.path, event.size);
+
+                    LOG_DEBUG("Event sent: %s event=%s type=%d ts=%" PRId64 " mtime=%" PRId64 " mask=0x%x size=%" PRIu64,
+                              event.path,
+                              feb_event_name(event.event_type),
+                              (int)event.event_type,
+                              event.ts,
+                              event.mtime,
+                              (unsigned)event.mask,
+                              event.size);
                 }
 
                 close(metadata->fd); // 必须手动关闭内核提供的 fd

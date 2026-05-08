@@ -116,16 +116,20 @@ void ipc_broadcast(int server_fd, const feb_event_t *event) {
     ipc_accept_clients(server_fd);
 
     // 2. 构造 JSON 字符串 (NDJSON 格式)
-    char json_buf[1024];
+    // path / event / type / size / ts / mtime / mask
+    char json_buf[4096];
     json_writer_t w;
-    
+
     // 初始化并使用 JsonWriter 接口
     json_init(&w, json_buf, sizeof(json_buf) - 2); // 留出 \n\0 空间
-    
+
     json_start_object(&w);
     json_key_string(&w, "path", event->path);
+    json_key_string(&w, "event", feb_event_name(event->event_type));
+    json_key_int(&w, "type", (int64_t)event->event_type);
     json_key_uint(&w, "size", event->size);
-    json_key_int(&w, "ts", event->timestamp);
+    json_key_int(&w, "ts", event->ts);
+    json_key_int(&w, "mtime", event->mtime);
     json_key_uint(&w, "mask", event->mask);
     json_end_object(&w);
     

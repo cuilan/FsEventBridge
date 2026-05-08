@@ -17,7 +17,7 @@ tests/
 └── README.md              # 本文件
 ```
 
-每个里程碑独立一个目录。新增里程碑只需新建 `milestoneN/{unit,e2e}/`，并把对应的脚本文件丢进去；`run.sh` 自动发现。
+每个里程碑独立一个目录（例如已有 `milestone0/`、`milestone1/`）。新增里程碑只需新建 `milestoneN/{unit,e2e}/`，并把对应的脚本文件丢进去；`run.sh` 自动发现。
 
 ## How to run
 
@@ -32,6 +32,7 @@ bash scripts/build.sh
 ```bash
 bash tests/run.sh                              # 所有里程碑、所有类型
 bash tests/run.sh --milestone 0                # 仅 milestone0
+bash tests/run.sh --milestone 1 --type e2e     # NDJSON 语义（需 root/setcap）
 bash tests/run.sh --milestone 0 --type unit    # 仅 unit
 bash tests/run.sh --type e2e                   # 所有里程碑的 e2e（需要 root）
 ```
