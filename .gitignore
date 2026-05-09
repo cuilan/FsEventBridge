@@ -9,6 +9,7 @@ obj/
 
 
 # --- CMake / CTest ---
+# CTest 在运行目录下生成 Testing/（如 Temporary/CTestCostData.txt）；勿入库。请在 build/ 内 ctest，避免污染仓库根。
 Testing/
 CMakeFiles/
 cmake_install.cmake
