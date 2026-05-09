@@ -31,7 +31,7 @@
 
 <br/>
 
-将内核文件系统事件转为 **NDJSON** 流，经 **UDS** 分发给 Go、Python、Java 等下游。
+将 **FsEventBridge** 提供的内核文件事件转为 **NDJSON** 流，经 **UDS** 分发给 Go、Python、Java 等下游。（命令行请使用 **`fseventbridge`** 或 **`feb`**。）
 
 </div>
 
@@ -67,6 +67,8 @@ mkdir -p build && cd build
 cmake ..
 cmake --build . -j"$(nproc)"
 
+# 产物：build/fseventbridge；同目录下另有 feb → fseventbridge（开发便捷，与 make install 行为一致）
+
 # 可选：生成 Debian / RPM 安装包（需本机装有 cpack 相应生成器）
 cpack
 ```
@@ -79,18 +81,18 @@ cpack
 
 监听文件事件需要 **`CAP_SYS_ADMIN`**。任选其一：
 
-* 临时：`sudo ./FsEventBridge …`
-* 开发便利（每次重新编译后需重设）：`sudo setcap cap_sys_admin+ep ./build/FsEventBridge`，之后可直接以普通用户运行。
+* 临时：`sudo ./fseventbridge …`，或 `./feb …`（`build/` 内含指向主程序的 **`feb`** 符号链接）。
+* 开发便利（每次重新编译后需重设）：`sudo setcap cap_sys_admin+ep ./build/fseventbridge`，之后可直接以普通用户运行。**`./build/feb` 与 `./build/fseventbridge` 等价。**
 
 ### 命令行示例
 
 监控目录、指定 Socket，并打印调试日志：
 
 ```bash
-sudo ./FsEventBridge -d /data/sate -s /tmp/feb.sock -l debug -r
+sudo ./fseventbridge -d /data/sate -s /tmp/feb.sock -l debug -r
 ```
 
-常用选项（完整列表见 `./FsEventBridge --help`）：
+常用选项（完整列表见 `fseventbridge --help`；开发目录下也可用 `./build/feb -h`，二者相同）：
 
 | 选项 | 作用 |
 |------|------|
@@ -134,13 +136,16 @@ on_queue_full = "disconnect"
 
 使用方式：
 
+包安装默认配置：**`/etc/fseventbridge/config.toml`**，`systemctl` 单元名：**`fseventbridge.service`**（项目名仍常写作 **FsEventBridge**）。
+
 ```bash
-sudo ./FsEventBridge -c /path/to/config.toml
+sudo fseventbridge -c /etc/fseventbridge/config.toml
+# 或通过便捷名：sudo feb -c ...
 ```
 
 ### 消费事件（NDJSON）
 
-先启动 FsEventBridge，再在业务侧连接同一 UDS，按行读取 JSON（一行一个对象）。示例客户端：`tests/test_client.py`、`tests/test_client.go`。
+先启动 **FsEventBridge**（运行命令 **`fseventbridge`** 或 **`feb`**），再在业务侧连接同一 UDS，按行读取 JSON（一行一个对象）。示例客户端：`tests/test_client.py`、`tests/test_client.go`。
 
 每条事件对象的字段：
 

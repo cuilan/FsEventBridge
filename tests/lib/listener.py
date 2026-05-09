@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test-only UDS listener for FsEventBridge.
+"""Test-only UDS listener for the FsEventBridge daemon (binary: fseventbridge).
 
 Connects to the given socket, reads NDJSON events, prints each event line to
 stdout, and exits when either:

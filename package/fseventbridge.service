@@ -1,10 +1,10 @@
 [Unit]
-Description=Fs Event Bridge Gateway
+Description=file system event gateway (fseventbridge)
 After=network.target
 
 [Service]
 Type=notify
-ExecStart=/usr/bin/FsEventBridge -c /etc/FsEventBridge/config.toml
+ExecStart=/usr/bin/fseventbridge -c /etc/fseventbridge/config.toml
 Restart=always
 # 赋予内核监控必要的特权
 CapabilityBoundingSet=CAP_SYS_ADMIN

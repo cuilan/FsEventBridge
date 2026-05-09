@@ -7,7 +7,8 @@ set -euo pipefail
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_ROOT="$(cd "$TESTS_DIR/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$PROJECT_ROOT/build}"
-FEB_BIN="${FEB_BIN:-$BUILD_DIR/FsEventBridge}"
+# 默认跑主二进制 fseventbridge；同目录下有 feb → fseventbridge 开发用符号链接
+FEB_BIN="${FEB_BIN:-$BUILD_DIR/fseventbridge}"
 FIXTURES_DIR="$TESTS_DIR/fixtures"
 LISTENER="$TESTS_DIR/lib/listener.py"
 

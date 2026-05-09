@@ -1,4 +1,4 @@
-# FsEventBridge 配置示例
+# FsEventBridge 配置示例（由命令 fseventbridge / feb 读取）
 # 命令行参数（CLI）会覆盖此文件中的对应字段
 
 [server]

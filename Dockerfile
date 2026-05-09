@@ -26,12 +26,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=builder /app/build/FsEventBridge .
+COPY --from=builder /app/build/fseventbridge ./fseventbridge
+COPY --from=builder /app/build/feb ./feb
 COPY --from=builder /app/configs/config.toml ./config.toml
 
 # Create a default monitor directory
 RUN mkdir -p /monitor
 
-# Run the bridge
-ENTRYPOINT ["./FsEventBridge"]
+# Run the bridge（feb 与 fseventbridge 等价）
+ENTRYPOINT ["./fseventbridge"]
 CMD ["-d", "/monitor", "-s", "/tmp/feb.sock"]

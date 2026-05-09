@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}[*] Starting Packaging Process...${NC}"
 
 # 1. 确保先执行构建
-if [ ! -f "$BUILD_DIR/FsEventBridge" ]; then
+if [ ! -f "$BUILD_DIR/fseventbridge" ]; then
     echo -e "${YELLOW}[!] Executable not found. Running build script first...${NC}"
     "$SCRIPT_DIR/build.sh"
     if [ $? -ne 0 ]; then

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script to build and run FsEventBridge in Docker with necessary privileges
+# 在 Docker 中构建并运行 FsEventBridge（镜像/容器内命令：fseventbridge），需足够权限以使用 fanotify
 
 IMAGE_NAME="fseventbridge"
 MONITOR_DIR="/tmp/docker_test"
@@ -11,7 +11,7 @@ mkdir -p $MONITOR_DIR
 echo "Building Docker image..."
 docker build -t $IMAGE_NAME .
 
-echo "Running FsEventBridge in privileged container..."
+echo "Running FsEventBridge (fseventbridge) in privileged container..."
 echo "Monitoring host directory: $MONITOR_DIR"
 echo "Events will be sent to internal socket (use docker exec to see logs)"
 

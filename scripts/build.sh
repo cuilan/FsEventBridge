@@ -40,4 +40,4 @@ if ! make -j$(nproc); then
     exit 1
 fi
 
-echo -e "${GREEN}[SUCCESS] Build complete. Executable is at: $BUILD_DIR/FsEventBridge${NC}"
+echo -e "${GREEN}[SUCCESS] Build complete. Binaries: $BUILD_DIR/fseventbridge (+ symlink feb)${NC}"

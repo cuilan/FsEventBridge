@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# FsEventBridge 测试入口
+# FsEventBridge 测试入口（二进制名：fseventbridge）
 #
 # 用法：
 #   tests/run.sh                       # 跑所有里程碑的所有测试

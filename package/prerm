@@ -2,10 +2,9 @@
 set -e
 
 case "$1" in
-    remove|deconfigure)
-        # 卸载或降级前停止并禁用服务
-        systemctl stop FsEventBridge.service >/dev/null 2>&1 || true
-        systemctl disable FsEventBridge.service >/dev/null 2>&1 || true
+    remove|purge|deconfigure)
+        systemctl stop fseventbridge.service >/dev/null 2>&1 || true
+        systemctl disable fseventbridge.service >/dev/null 2>&1 || true
         ;;
 esac
 

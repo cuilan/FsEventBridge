@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script Name: setup_env.sh
-# Description: Initialize development environment for FsEventBridge.
+# Description: Initialize development environment for FsEventBridge (fseventbridge binary).
 #              Supports Debian/Ubuntu, RHEL/Fedora/CentOS, Arch Linux, and openSUSE.
 
 # Color definitions for output
@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 
 set -e
 
-echo -e "${GREEN}=== FsEventBridge Multi-Distro Environment Setup ===${NC}"
+echo -e "${GREEN}=== FsEventBridge dev environment setup (fseventbridge) ===${NC}"
 
 # 1. Check for root privileges
 if [ "$EUID" -ne 0 ]; then

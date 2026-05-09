@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.12)
-project(FsEventBridge C)
+project(fseventbridge C)
 
 # --- 自动版本管理 ---
 # 读取 VERSION 文件内容
 file(READ "VERSION" FEB_VERSION_RAW)
 string(STRIP "${FEB_VERSION_RAW}" FEB_VERSION)
-message(STATUS "FsEventBridge Version: ${FEB_VERSION}")
+message(STATUS "fseventbridge ${FEB_VERSION}")
 
 # 1. 编译器选项：强制 C17 标准并开启严苛模式
 set(CMAKE_C_STANDARD 17)
@@ -25,26 +25,50 @@ find_library(LIBURING uring REQUIRED)
 # 3. 定义项目源码与包含路径
 include_directories(include vendor/tomlc99)
 # 包含 tomlc99 源代码 (放在 vendor/tomlc99 下)
-add_executable(FsEventBridge 
-    src/main.c 
-    src/monitor.c 
-    src/ipc_uds.c 
+add_executable(fseventbridge
+    src/main.c
+    src/monitor.c
+    src/ipc_uds.c
     src/config_loader.c
     src/utils.c
     vendor/tomlc99/toml.c  # tomlc99 解析器
 )
 
+# 便捷别名：开发目录内 feb → fseventbridge；安装阶段见下方 install(CODE)
+if(UNIX)
+    add_custom_command(
+        TARGET fseventbridge POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${CMAKE_BINARY_DIR}/feb"
+        COMMAND ${CMAKE_COMMAND} -E create_symlink fseventbridge "${CMAKE_BINARY_DIR}/feb"
+        COMMENT "feb → fseventbridge (仅供开发目录内使用)")
+endif()
+
 # 链接库：系统库、systemd、uring 和数学库
-target_link_libraries(FsEventBridge 
-    ${LIBURING} 
-    ${SYSTEMD_LIBRARIES} 
+target_link_libraries(fseventbridge
+    ${LIBURING}
+    ${SYSTEMD_LIBRARIES}
     m
 )
 
-# 4. 安装定义 (决定执行 make install 时的去向)
-install(TARGETS FsEventBridge DESTINATION /usr/bin)
-install(FILES configs/config.toml DESTINATION /etc/FsEventBridge)
-install(FILES package/FsEventBridge.service DESTINATION /lib/systemd/system)
+# 4. 安装定义 (决定执行 make install / CPack 预阶段时的去向)
+set(FEB_INSTALL_BINDIR "/usr/bin")
+install(TARGETS fseventbridge RUNTIME DESTINATION "${FEB_INSTALL_BINDIR}")
+
+# 安装后 usr/bin/feb → fseventbridge（不需要时可删除本段）
+install(CODE "
+  set(_destdir \"\$ENV{DESTDIR}\")
+  set(_feb \"\${_destdir}${FEB_INSTALL_BINDIR}/feb\")
+  if(EXISTS \"\${_feb}\")
+    file(REMOVE \"\${_feb}\")
+  endif()
+  execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink fseventbridge \"\${_feb}\" RESULT_VARIABLE _feb_sym)
+  if(NOT _feb_sym EQUAL 0)
+    message(FATAL_ERROR \"create symlink feb -> fseventbridge failed (\${_feb_sym})\")
+  endif()
+")
+
+install(FILES configs/config.toml DESTINATION /etc/fseventbridge)
+install(FILES package/fseventbridge.service DESTINATION /lib/systemd/system)
 
 # --- 5. 测试集成 (ctest) ---
 # 通过 tests/run.sh 串联各里程碑的 unit / e2e 测试
@@ -59,7 +83,7 @@ add_test(
 set_tests_properties(milestone0_unit PROPERTIES
     LABELS "milestone0;unit"
     SKIP_RETURN_CODE 77
-    ENVIRONMENT "FEB_BIN=$<TARGET_FILE:FsEventBridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
+    ENVIRONMENT "FEB_BIN=$<TARGET_FILE:fseventbridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
 )
 
 add_test(
@@ -69,7 +93,7 @@ add_test(
 set_tests_properties(milestone0_e2e PROPERTIES
     LABELS "milestone0;e2e"
     SKIP_RETURN_CODE 77
-    ENVIRONMENT "FEB_BIN=$<TARGET_FILE:FsEventBridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
+    ENVIRONMENT "FEB_BIN=$<TARGET_FILE:fseventbridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
 )
 
 add_test(
@@ -79,7 +103,7 @@ add_test(
 set_tests_properties(milestone1_e2e PROPERTIES
     LABELS "milestone1;e2e"
     SKIP_RETURN_CODE 77
-    ENVIRONMENT "FEB_BIN=$<TARGET_FILE:FsEventBridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
+    ENVIRONMENT "FEB_BIN=$<TARGET_FILE:fseventbridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
 )
 
 add_test(
@@ -89,14 +113,14 @@ add_test(
 set_tests_properties(milestone3_e2e PROPERTIES
     LABELS "milestone3;e2e"
     SKIP_RETURN_CODE 77
-    ENVIRONMENT "FEB_BIN=$<TARGET_FILE:FsEventBridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
+    ENVIRONMENT "FEB_BIN=$<TARGET_FILE:fseventbridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
 )
 
 # --- 6. CPack 自动打包配置 (生成 .deb 和 .rpm) ---
 
 set(CPACK_PACKAGE_NAME "fseventbridge")
 set(CPACK_PACKAGE_VERSION "${FEB_VERSION}")
-set(CPACK_PACKAGE_VENDOR "FsEventBridge Community")
+set(CPACK_PACKAGE_VENDOR "fseventbridge")
 set(CPACK_PACKAGE_CONTACT "admin@example.com")
 set(CPACK_PACKAGE_DESCRIPTION "High-performance Linux file system event gateway via fanotify.")
 

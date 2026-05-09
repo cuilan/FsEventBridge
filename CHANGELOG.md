@@ -2,6 +2,25 @@
 
 本项目版本号见仓库根目录 `VERSION`。以下按版本汇总面向使用方与开发者的重要变更。
 
+## [1.5.0] — 安装路径与二进制 Debian 风格小写化；文档保留 FsEventBridge 项目名（与旧包不兼容）
+
+- **运行时名**：**`fseventbridge`**（**`feb`** 为包内提供的符号链接）。CMake **`project`** 与可执行目标 **`fseventbridge`**。
+- **配置与服务**：**`/etc/fseventbridge/`**；**`fseventbridge.service`**（替代旧 **`FsEventBridge.service`** 与 **`/etc/FsEventBridge/`**）。
+- **`--help`**：保留 **FsEventBridge** ASCII 横幅与英文说明；标明项目名为 **FsEventBridge**、实际命令为 **`fseventbridge` / `feb`**；**Usage** 中列出 **`feb [options]`**（符号链接用法）。
+- **`--version`**：**`fseventbridge <version> (FsEventBridge)`**。日志中可用 **FsEventBridge** 指代服务，不暗示 CLI 为混写名。
+- 上游仓库 GitHub 路径仍为 **`cuilan/FsEventBridge`**（组织/仓库 slug 未改）。
+
+---
+
+## [1.4.1] — 安装名与便捷链接（Debian 友好）
+
+- **主程序**：`fseventbridge`（小写，与二进制包名 `fseventbridge` 一致）。`make install` / `.deb` 安装到 **`/usr/bin/fseventbridge`**。
+- **便捷符号链接**：**`/usr/bin/feb` → `fseventbridge`**，由 `CMake` `install(CODE …)` 创建；若官方打包政策不需要，可删除该段及 **POST_BUILD** 中的 `build/feb`。
+- **systemd** `ExecStart`、测试默认 **`FEB_BIN`**、Docker 与文档已对齐。
+- **`--help` / `--version`**：以 **`fseventbridge`** / **`feb`** 为准；**1.5.0** 起 **`--version`** 附带 **`(FsEventBridge)`**，默认配置目录与服务单元名为全小写（见 **1.5.0**）。
+
+---
+
 ## [1.4.0] — Milestone 3 后续：IPC 可调与 POLLOUT
 
 - **`[ipc]` 配置**：`per_client_queue_max_bytes`（0 或未写则用内置默认 256 KiB）、`on_queue_full`（`disconnect` / `discard_pending` / `skip_event`）。

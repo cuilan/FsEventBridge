@@ -1,6 +1,6 @@
 # Tests
 
-FsEventBridge 的测试体系按里程碑组织，所有测试都既能在本地跑，也能在 GitHub Actions 中跑。
+FsEventBridge 的测试体系按里程碑组织，所有测试都既能在本地跑，也能在 GitHub Actions 中跑。（构建产物命令名为 **fseventbridge**。）
 
 ## Layout
 
@@ -65,7 +65,7 @@ ctest -L e2e
 sudo -E bash tests/run.sh --type e2e
 
 # 方式 2：给二进制打能力位（注意每次重新编译要重新设置）
-sudo setcap cap_sys_admin+ep ./build/FsEventBridge
+sudo setcap cap_sys_admin+ep ./build/fseventbridge
 bash tests/run.sh --type e2e
 ```
 

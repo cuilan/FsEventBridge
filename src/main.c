@@ -115,7 +115,7 @@ static void print_resolved_config(const feb_config_t *config) {
     printf("ipc_on_queue_full=%s\n", ipc_pol);
 }
 
-// 帮助信息
+// 帮助正文可用 FsEventBridge 作项目称谓；真正的命令名与安装一致为 fseventbridge（及 feb）
 void print_usage(const char *prog_name) {
     printf("\n");
     printf("  ███████╗███████╗███████╗██╗   ██╗███████╗███╗   ██╗████████╗██████╗ ██████╗ ██╗██████╗  ██████╗ ███████╗\n");
@@ -125,20 +125,22 @@ void print_usage(const char *prog_name) {
     printf("  ██║     ███████║███████╗ ╚████╔╝ ███████╗██║ ╚████║   ██║   ██████╔╝██║  ██║██║██████╔╝╚██████╔╝███████╗\n");
     printf("  ╚═╝     ╚══════╝╚══════╝  ╚═══╝  ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝  ╚═════╝ ╚══════╝\n");
     printf("\n");
-    printf("  High-Performance File System Event Bridge (Linux fanotify & io_uring)\n");
+    printf("  High-Performance File System Event Bridge — FsEventBridge\n");
     printf("  Version: %s\n", FEB_VERSION);
+    printf("  Command (installed): fseventbridge   Short name: feb (symlink when packaged)\n");
     printf("  Repo: https://github.com/cuilan/FsEventBridge\n\n");
 
     printf("Usage:\n");
-    printf("  %s [options]\n\n", prog_name);
+    printf("  %s [options]\n", prog_name);
+    printf("  feb [options]        (same program when the feb symlink is installed)\n\n");
 
     printf("Examples:\n");
     printf("  1. Monitor a directory recursively:\n");
-    printf("     %s -d /data/logs -r\n\n", prog_name);
+    printf("     fseventbridge -d /data/logs -r\n\n");
     printf("  2. Monitor with config file:\n");
-    printf("     %s -c /etc/feb/config.toml\n\n", prog_name);
+    printf("     fseventbridge -c /etc/fseventbridge/config.toml\n\n");
     printf("  3. Advanced usage (exclude extensions & paths, debug level):\n");
-    printf("     %s -d /var/www -r -l debug -e .swp -e .tmp -x /var/www/cache\n\n", prog_name);
+    printf("     fseventbridge -d /var/www -r -l debug -e .swp -e .tmp -x /var/www/cache\n\n");
 
     printf("Options:\n");
     printf("  -c, --config PATH    Specify the TOML configuration file path\n");
@@ -191,7 +193,7 @@ int main(int argc, char **argv) {
     while ((opt = getopt_long(argc, argv, "c:d:s:ril:e:x:vh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'c': config_file = optarg; break;
-            case 'v': printf("FsEventBridge Version: %s\n", FEB_VERSION); return 0;
+            case 'v': printf("fseventbridge %s (FsEventBridge)\n", FEB_VERSION); return 0;
             case 'h': print_usage(argv[0]); return 0;
             default:  break; // 忽略其他参数，留给第二次解析
         }
@@ -291,7 +293,7 @@ int main(int argc, char **argv) {
 
     // 6. 告知 systemd 服务已就绪
     sd_notify(0, "READY=1");
-    LOG_INFO("FsEventBridge Started Successfully, Monitoring Directory: %s", config.monitor_path);
+    LOG_INFO("FsEventBridge started successfully, monitoring directory: %s", config.monitor_path);
 
     // 7. 进入主循环 (将 running 标志传递给 monitor_loop)
     monitor_loop(fan_fd, ipc_fd, &config, &running);

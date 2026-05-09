@@ -3,19 +3,14 @@ set -e
 
 case "$1" in
     configure)
-        # 重新加载 systemd 配置
         systemctl daemon-reload >/dev/null 2>&1 || true
-        
+
         if [ -z "$2" ]; then
-            # 首次安装：启用服务但不立即启动（遵循 Debian 策略，或者根据需要启动）
-            # 这里我们只 Enable，让用户手动 Start 或重启后自启
-            systemctl enable FsEventBridge.service >/dev/null 2>&1 || true
-            echo "FsEventBridge 安装成功。"
-            echo "请运行 'systemctl start FsEventBridge' 启动服务。"
+            systemctl enable fseventbridge.service >/dev/null 2>&1 || true
+            echo "fseventbridge installed. Enable with: systemctl enable --now fseventbridge"
         else
-            # 升级：尝试重启服务
-            echo "正在升级 FsEventBridge..."
-            systemctl try-restart FsEventBridge.service >/dev/null 2>&1 || true
+            echo "Upgrading fseventbridge..."
+            systemctl try-restart fseventbridge.service >/dev/null 2>&1 || true
         fi
         ;;
 esac
