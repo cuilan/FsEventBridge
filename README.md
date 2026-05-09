@@ -33,7 +33,17 @@
 
 将 **FsEventBridge** 提供的内核文件事件转为 **NDJSON** 流，经 **UDS** 分发给 Go、Python、Java 等下游。（命令行请使用 **`fseventbridge`** 或 **`feb`**。）
 
+**英文文档：** [Documentation in English](docs/README.en.md) · [文档索引](docs/README.md)
+
 </div>
+
+---
+
+## 演示
+
+下列录屏展示在监控目录中创建/写入文件后，**NDJSON** 经 **Unix Domain Socket** 逐行输出（运行需 **root** 或 **`CAP_SYS_ADMIN`**；示例客户端见 `tests/test_client.py` 等）。
+
+![fseventbridge / feb 终端演示](docs/feb.gif)
 
 ---
 
@@ -206,7 +216,7 @@ sudo -E bash tests/run.sh --milestone 3 --type e2e     # IPC（需 root）
 sudo -E bash tests/run.sh --milestone 4 --type e2e     # 监控范围与 recursive（需 root）
 ```
 
-说明见 [`tests/README.md`](tests/README.md)。路线图见 [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md)。
+说明见 [`tests/README.md`](tests/README.md)。路线图见 [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md)。**English:** [docs/README.en.md](docs/README.en.md)
 
 ---
 
