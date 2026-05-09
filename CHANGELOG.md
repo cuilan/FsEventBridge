@@ -2,6 +2,15 @@
 
 本项目版本号见仓库根目录 `VERSION`。以下按版本汇总面向使用方与开发者的重要变更。
 
+## [1.6.0] — Milestone 4：监控逻辑范围与 `recursive` 语义
+
+- **内核仍为 `FAN_MARK_FILESYSTEM`**；在转发 NDJSON 之前按 **`--dir` / `[monitor].path` 锚点** 做 **逻辑路径过滤**：同文件系统上锚点**以外**的路径不再上报（与「只盯某一目录树」的预期一致）。
+- **`recursive=true`（TOML 默认）**：锚点**整棵子树**（仍受 `exclude_*` 约束）；CLI **`-r` / `--recursive`** 设为真。
+- **`recursive=false`**：仅锚点本身及**直接进入的一层**路径；CLI **`--no-recursive`**。
+- 启动时 **INFO** 日志说明 fanotify + 逻辑范围；**`--help`** 更新。**e2e**：`tests/milestone4/e2e/`；**`ctest -L milestone4`**。
+
+---
+
 ## [1.5.0] — 安装路径与二进制 Debian 风格小写化；文档保留 FsEventBridge 项目名（与旧包不兼容）
 
 - **运行时名**：**`fseventbridge`**（**`feb`** 为包内提供的符号链接）。CMake **`project`** 与可执行目标 **`fseventbridge`**。

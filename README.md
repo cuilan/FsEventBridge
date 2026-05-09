@@ -39,7 +39,7 @@
 
 ## 🚀 核心特性
 
-* **内核级大范围监控**：基于 `fanotify` 在**锚点路径所在的文件系统/挂载**上打标，避免 `inotify` 那样对每个子目录逐个 `add_watch`；实际覆盖范围取决于内核与挂载类型（见下文 NFS 说明）。
+* **内核级大范围监控**：基于 `fanotify` **`FAN_MARK_FILESYSTEM`** 在**锚点路径所在的文件系统/挂载**上打标；随后在网关内按 **锚点子树** 与 **`recursive` / `--no-recursive`**（见使用指南）再做逻辑过滤，再通过 UDS 发出。实际事件是否出现仍取决于内核与挂载类型（参见 NFS 说明）。
 * **NFS 客户端挂载**：**无需改动 NFS 服务端**；在**本机 NFS 客户端挂载点**上，事件是否出现、是否齐全，由 **Linux 内核 + NFS 客户端实现（及 NFS 版本）**共同决定。**本仓库当前没有单独的「NFS 专用协议」代码路径**——与同机 ext4/XFS 等相比，**不能保证**事件语义与覆盖率完全一致，需要在目标内核上实测（详见 `DEVELOPMENT_PLAN.md` 中的兼容性验证）。
 * **C17 + 严控告警**：源码按 **ISO C17**（`CMake` 设定 `C_STANDARD 17`，并启用 `-Wall -Wextra -Werror`，另使用 `_GNU_SOURCE` 以获得 Linux 必需的 POSIX/GNU API）。
 * **高性能取向**：链路以 **`fanotify` + 精简 NDJSON 推送**为主；已链接 **`liburing`** 并支持可选初始化，**热路径异步化与完整性能调优见路线图**（Milestone 2；是否默认深度接入 io_uring 将结合压测结论决定）。
@@ -83,6 +83,23 @@ cpack
 
 * 临时：`sudo ./fseventbridge …`，或 `./feb …`（`build/` 内含指向主程序的 **`feb`** 符号链接）。
 * 开发便利（每次重新编译后需重设）：`sudo setcap cap_sys_admin+ep ./build/fseventbridge`，之后可直接以普通用户运行。**`./build/feb` 与 `./build/fseventbridge` 等价。**
+* 包安装的 **`fseventbridge.service`** 通过 **`AmbientCapabilities=CAP_SYS_ADMIN`** 等在单元内对齐能力（参见 `package/fseventbridge.service`）。
+* 若仍报 **`Operation not permitted`**：多为不具备 **`fanotify` 权限**或与容器 / 内核策略有关，不等同于应用程序逻辑故障。
+
+### 监控范围与 `recursive`
+
+网关在内核侧使用 **`FAN_MARK_FILESYSTEM`**：**在 `--dir` / `[monitor].path` 所在路径所属的整块文件系统上打标**，因此内核会评估该挂载上各处的事件；为贴近「只关心某一目录树」的常见需求，在向 UDS **转发之前**会做 **逻辑路径过滤**（Milestone 4）：
+
+| 层级 | 行为 |
+|------|------|
+| 内核标记 | **`FAN_MARK_FILESYSTEM`**：标记包含锚点的**整块文件系统**；锚点主要用于选中挂载实例。 |
+| 逻辑范围（默认启用） | 仅保留位于锚点之下的路径事件；同一文件系统内、**锚点以外的兄弟目录**等路径会在转发前丢弃。 |
+| `recursive=true`（随仓库 **TOML 默认**；CLI **`-r` / `--recursive`** 设为真） | 转发锚点的**完整子树**（仍服从 **`exclude_extensions` / `exclude_paths`**）。 |
+| `recursive=false`（CLI **`--no-recursive`**） | 仅锚点路径自身，及其目录下「**直接一层**」条目（不出现更深的路径层级，例如 `./a/b.txt`）。 |
+| 建议使用**绝对路径** | 与服务单元、日志和运维脚本一致；相对路径取决于进程 **CWD**。 |
+| **`--check-config`** | 除各配置项外打印 **`logical_scope`**（`subtree` 或 `direct_children`，与 `recursive` 对应）及 **`logical_scope_explained=…`**（英文单行，概括「内核 FAN_MARK_FILESYSTEM + 用户态按锚点收窄 + 再施加 exclude_*」）。便于干跑验收与自动化解析。 |
+
+容器、**WSL2**、`user.namespaces` 等场景下：**`fanotify`** 可能比常规实体机更受限制；以目标环境实测为准（亦见 [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) 中的 NFS / 兼容性说明）。
 
 ### 命令行示例
 
@@ -99,13 +116,14 @@ sudo ./fseventbridge -d /data/sate -s /tmp/feb.sock -l debug -r
 | `-d, --dir` | 监控路径 |
 | `-s, --socket` | UDS 路径（默认 `/tmp/feb.sock`） |
 | `-c, --config` | TOML 配置文件 |
-| `-r, --recursive` | 递归相关配置项（与 fanotify 行为配合，详见帮助） |
+| `-r, --recursive` | 锚点下的**完整子树**转发（逻辑过滤；CLI 设为真时覆盖配置文件） |
+| `--no-recursive` | 仅锚点及**直接进入的一层**路径（较深路径不转发） |
 | `-l, --log-level` | `debug` / `info` / `warn` / `error` |
 | `-e, --exclude-ext` | 按扩展名排除（可重复） |
 | `-x, --exclude-path` | 按路径前缀排除（可重复） |
 | `-i, --io-uring` | 启用 io_uring 相关初始化 |
 | `--no-io-uring` | 关闭上述开关 |
-| `--check-config` | 加载配置后打印最终生效项并退出（无需 root） |
+| `--check-config` | 加载配置后打印最终生效项并退出（含 **`logical_scope`** / **`logical_scope_explained`**，说明见下表后「监控范围」一节；无需 root） |
 | `-v, --version` | 版本信息 |
 
 配置文件与 CLI 可同时使用：**CLI 优先级更高**。
@@ -185,6 +203,7 @@ bash tests/run.sh --milestone 0 --type unit    # 无需 root
 sudo -E bash tests/run.sh --milestone 0 --type e2e
 sudo -E bash tests/run.sh --milestone 1 --type e2e   # NDJSON 语义回归
 sudo -E bash tests/run.sh --milestone 3 --type e2e     # IPC（需 root）
+sudo -E bash tests/run.sh --milestone 4 --type e2e     # 监控范围与 recursive（需 root）
 ```
 
 说明见 [`tests/README.md`](tests/README.md)。路线图见 [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md)。

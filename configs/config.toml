@@ -11,8 +11,10 @@ log_level = "info"
 # 监控目标路径（必填；也可由 -d/--dir 提供）
 path = "/tmp"
 
-# 当前实现使用 fanotify FAN_MARK_FILESYSTEM 监听整个文件系统层级，
-# 此字段保留用于未来切换到“仅子目录树”模式
+# 逻辑监控范围（Milestone 4）：与 FAN_MARK_FILESYSTEM、recursive、exclude_* 的配合
+#
+# 「recursive=true」（默认）：在锚点路径下递归包含所有子路径上的事件；
+# 「recursive=false」：仅锚点路径自身及其「直接一层」路径（不出现更深层的 "/" 片段）。
 recursive = true
 
 # 关注的事件类型，可多选

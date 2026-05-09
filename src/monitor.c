@@ -80,6 +80,10 @@ int monitor_init(const feb_config_t *config) {
         return -1;
     }
 
+    LOG_INFO("fanotify: FAN_MARK_FILESYSTEM on filesystem containing \"%s\"; forwarding only logical scope under anchor (recursive=%s).",
+             config->monitor_path,
+             config->recursive ? "true (full subtree below anchor)" : "false (direct children only)");
+
     // 3. 如果启用 io_uring，初始化
     if (config->use_io_uring) {
         if (io_uring_init(&g_io_uring) == 0) {
@@ -119,6 +123,43 @@ static bool path_under_prefix(const char *path, const char *prefix) {
     // 命中边界要求：path 等于 prefix，或紧随其后是 '/'
     char next = path[plen];
     return next == '\0' || next == '/';
+}
+
+// 判断事件路径是否落在「逻辑监控范围」内（与 fanotify 使用 FAN_MARK_FILESYSTEM 的配合说明见 README）
+static bool event_path_in_scope(const char *path, const feb_config_t *config) {
+    const char *root = config->monitor_path;
+    if (root == NULL || root[0] == '\0')
+        return true;
+
+    char norm[FEB_MAX_PATH];
+    size_t n = strlen(root);
+    if (n >= sizeof(norm))
+        return false;
+    memcpy(norm, root, n + 1);
+    while (n > 1 && norm[n - 1] == '/')
+        norm[--n] = '\0';
+
+    // 锚点为根 "/"：凡是绝对路径再按 recursive 切深度
+    if (norm[0] == '/' && norm[1] == '\0') {
+        if (path[0] != '/')
+            return false;
+        if (config->recursive)
+            return true;
+        const char *rest = path + 1;
+        return strchr(rest, '/') == NULL;
+    }
+
+    if (strcmp(path, norm) == 0)
+        return true;
+    if (!path_under_prefix(path, norm))
+        return false;
+    if (config->recursive)
+        return true;
+
+    const char *rest = path + strlen(norm);
+    if (*rest == '/')
+        rest++;
+    return strchr(rest, '/') == NULL;
 }
 
 // 综合过滤：扩展名 + 路径前缀
@@ -198,7 +239,7 @@ void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile s
                         continue;
                     }
 
-                    if (!should_skip(event.path, config)) {
+                    if (event_path_in_scope(event.path, config) && !should_skip(event.path, config)) {
                         event.event_type = FEB_EVENT_UNKNOWN;
                         event.mtime = -1;
 

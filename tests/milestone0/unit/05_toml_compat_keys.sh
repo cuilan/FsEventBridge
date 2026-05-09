@@ -7,3 +7,4 @@ OUT=$(feb_stdout -c "$FIXTURES_DIR/compat_keys.toml" --check-config)
 
 # 旧键名 exclude_path 的两个非空项被加载、空字符串被丢弃
 assert_line "exclude_paths=/tmp/febtest/cache,/tmp/febtest/legacy" "$OUT"
+assert_line "logical_scope=subtree" "$OUT"

@@ -102,6 +102,13 @@ static void print_resolved_config(const feb_config_t *config) {
     printf("monitor_path=%s\n",  config->monitor_path);
     printf("socket_path=%s\n",   config->socket_path);
     printf("recursive=%s\n",     config->recursive ? "true" : "false");
+    // logical_scope：与内核 FAN_MARK_FILESYSTEM 配合的「用户态路径范围」摘要（供运维与自动化解析）
+    printf("logical_scope=%s\n", config->recursive ? "subtree" : "direct_children");
+    printf("logical_scope_explained="
+           "Kernel still uses FAN_MARK_FILESYSTEM on the filesystem that contains monitor_path; "
+           "only paths under monitor_path pass this filter before exclude_* rules. "
+           "subtree=full descendant tree when recursive=true; "
+           "direct_children=anchor path plus only immediate entries (no deeper paths) when recursive=false.\n");
     printf("use_io_uring=%s\n",  config->use_io_uring ? "true" : "false");
     printf("log_level=%s\n",     log_level_str(config->log_level));
     printf("event_mask=0x%x\n",  config->event_mask);
@@ -146,13 +153,14 @@ void print_usage(const char *prog_name) {
     printf("  -c, --config PATH    Specify the TOML configuration file path\n");
     printf("  -d, --dir PATH       Specify the monitoring directory (override configuration)\n");
     printf("  -s, --socket PATH    Specify the Unix Socket path (default: /tmp/feb.sock)\n");
-    printf("  -r, --recursive      Enable recursive monitoring (default: false)\n");
+    printf("  -r, --recursive      Forward entire subtree under --dir path (logical filter; overrides config)\n");
+    printf("      --no-recursive   Forward only direct children paths of --dir (no deeper subtree)\n");
     printf("  -i, --io-uring       Enable io_uring optimization (default: true)\n");
     printf("      --no-io-uring    Disable io_uring optimization (overrides config)\n");
     printf("  -l, --log-level      Specify the log level (debug, info, warn, error)\n");
     printf("  -e, --exclude-ext    Specify the exclude extension (multiple can be specified)\n");
     printf("  -x, --exclude-path   Specify the exclude path (multiple can be specified)\n");
-    printf("      --check-config   Print resolved configuration and exit (no monitoring)\n");
+    printf("      --check-config   Print resolved configuration (includes logical_scope) and exit (no monitoring)\n");
     printf("  -v, --version        Display version information\n");
     printf("  -h, --help           Display this help information\n\n");
 }
@@ -166,7 +174,8 @@ int main(int argc, char **argv) {
     // 仅长参数选项使用 256 起的虚拟短码，避免与 ASCII 短选项冲突
     enum {
         OPT_NO_IO_URING = 0x100,
-        OPT_CHECK_CONFIG
+        OPT_CHECK_CONFIG,
+        OPT_NO_RECURSIVE
     };
 
     bool check_config = false;
@@ -178,6 +187,7 @@ int main(int argc, char **argv) {
         {"recursive",    no_argument,       0, 'r'},
         {"io-uring",     no_argument,       0, 'i'},
         {"no-io-uring",  no_argument,       0, OPT_NO_IO_URING},
+        {"no-recursive", no_argument,       0, OPT_NO_RECURSIVE},
         {"log-level",    required_argument, 0, 'l'},
         {"exclude-ext",  required_argument, 0, 'e'},
         {"exclude-path", required_argument, 0, 'x'},
@@ -222,6 +232,9 @@ int main(int argc, char **argv) {
                 break;
             case 'r':
                 config.recursive = true;
+                break;
+            case OPT_NO_RECURSIVE:
+                config.recursive = false;
                 break;
             case 'i':
                 config.use_io_uring = true;
