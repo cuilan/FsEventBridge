@@ -2,6 +2,24 @@
 
 本项目版本号见仓库根目录 `VERSION`。以下按版本汇总面向使用方与开发者的重要变更。
 
+## [1.4.0] — Milestone 3 后续：IPC 可调与 POLLOUT
+
+- **`[ipc]` 配置**：`per_client_queue_max_bytes`（0 或未写则用内置默认 256 KiB）、`on_queue_full`（`disconnect` / `discard_pending` / `skip_event`）。
+- **`poll`** 对每个有积压的客户端追加 **POLLOUT**，可写时再 **flush**，与循环末尾 **`ipc_idle_flush`** 互补。
+- **`--check-config`** 打印 `ipc_per_client_queue_max`（最终生效值）与 `ipc_on_queue_full`。
+- **`ipc_init`** 接收 **`feb_config_t *`**（可传快照以应用上述选项）。
+
+---
+
+## [1.3.0] — Milestone 3：IPC 可靠性与可运维性
+
+- **非阻塞客户端套接字**；`send` 处理**短写**，未完成数据进入**每连接内存队列**（默认上限 **256 KiB**/连接），超限则**断开**该客户端，避免全局阻塞与内存无界增长。
+- **`ipc_broadcast` 不再内嵌 `accept`**：`monitor_loop` 使用 **`poll(fanotify, listen_fd)`**，在无 fanotify 事件时亦可 **`accept`** 新连接；每轮循环末尾 **`ipc_idle_flush`** 尝试刷出积压。
+- **可观测性**：约每 **2000** 次广播输出一条 **`[IPC] stats`**（clients、发送字节、各类断开计数）。
+- **测试**：`tests/milestone3/e2e/01_accept_before_fsevent.sh`；CMake **`milestone3_e2e`**。
+
+---
+
 ## [1.2.0] — Milestone 1：NDJSON 语义与扩展
 
 ### NDJSON（不保证与 1.1.x 字段兼容）

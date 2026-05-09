@@ -20,3 +20,5 @@ assert_line "use_io_uring=false"                     "$OUT"
 # CLI -e/-x 出现时会先清空配置文件来源的列表，仅保留 CLI 项
 assert_line "exclude_extensions=.swp"                "$OUT"
 assert_line "exclude_paths=/tmp/cli-override/skip"   "$OUT"
+assert_line "ipc_per_client_queue_max=65536"         "$OUT"
+assert_line "ipc_on_queue_full=skip_event"           "$OUT"

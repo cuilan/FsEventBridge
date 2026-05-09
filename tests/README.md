@@ -33,6 +33,7 @@ bash scripts/build.sh
 bash tests/run.sh                              # 所有里程碑、所有类型
 bash tests/run.sh --milestone 0                # 仅 milestone0
 bash tests/run.sh --milestone 1 --type e2e     # NDJSON 语义（需 root/setcap）
+bash tests/run.sh --milestone 3 --type e2e     # IPC：poll accept / 非阻塞发送
 bash tests/run.sh --milestone 0 --type unit    # 仅 unit
 bash tests/run.sh --type e2e                   # 所有里程碑的 e2e（需要 root）
 ```

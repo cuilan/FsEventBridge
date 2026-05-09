@@ -11,3 +11,7 @@ exclude_paths = ["/tmp/febtest/skip"]
 
 [processor]
 use_io_uring = false
+
+[ipc]
+per_client_queue_max_bytes = 65536
+on_queue_full = "skip_event"

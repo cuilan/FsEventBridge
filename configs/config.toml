@@ -34,3 +34,12 @@ use_io_uring = true
 
 # 预留字段，未来用于工作线程池规模；当前实现尚未使用
 worker_threads = 4
+
+[ipc]
+# 每个已连接客户端内部待发队列的最大字节数；0 或未写该段时表示默认 256 KiB
+per_client_queue_max_bytes = 262144
+# 队列满且无法继续入队时的策略：
+#   disconnect       — 断开该客户端（默认）
+#   discard_pending  — 丢弃积压，只尝试发送当前这一条 NDJSON
+#   skip_event       — 跳过本条事件对该客户端的发送，连接与积压保留
+on_queue_full = "disconnect"

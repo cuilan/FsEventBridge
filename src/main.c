@@ -87,8 +87,18 @@ static void print_event_names(uint32_t mask) {
     fputc('\n', stdout);
 }
 
-// dry-run：把已解析的最终配置打印到 stdout（用于自动化测试断言）
+// 打印一条配置项：IPC 队列上限的最终生效值（0 的配置表示走内置默认）
 static void print_resolved_config(const feb_config_t *config) {
+    size_t ipc_q_eff = config->ipc_per_client_queue_max;
+    if (ipc_q_eff == 0)
+        ipc_q_eff = 256 * 1024;
+
+    const char *ipc_pol = "disconnect";
+    if (config->ipc_queue_full_policy == FEB_IPC_QUEUE_FULL_DISCARD_PENDING)
+        ipc_pol = "discard_pending";
+    else if (config->ipc_queue_full_policy == FEB_IPC_QUEUE_FULL_SKIP_EVENT)
+        ipc_pol = "skip_event";
+
     printf("monitor_path=%s\n",  config->monitor_path);
     printf("socket_path=%s\n",   config->socket_path);
     printf("recursive=%s\n",     config->recursive ? "true" : "false");
@@ -101,6 +111,8 @@ static void print_resolved_config(const feb_config_t *config) {
     print_string_array(config->exclude_exts, config->exclude_exts_count);
     printf("exclude_paths=");
     print_string_array(config->exclude_paths, config->exclude_paths_count);
+    printf("ipc_per_client_queue_max=%zu\n", ipc_q_eff);
+    printf("ipc_on_queue_full=%s\n", ipc_pol);
 }
 
 // 帮助信息
@@ -266,7 +278,7 @@ int main(int argc, char **argv) {
     }
 
     // 初始化 IPC (Unix Domain Socket)，建立通信渠道
-    int ipc_fd = ipc_init(config.socket_path);
+    int ipc_fd = ipc_init(config.socket_path, &config);
     if (ipc_fd < 0) return 1;
 
     // 初始化监控器 (fanotify)，告诉内核要监控哪些文件

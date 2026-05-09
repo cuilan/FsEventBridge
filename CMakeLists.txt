@@ -82,6 +82,16 @@ set_tests_properties(milestone1_e2e PROPERTIES
     ENVIRONMENT "FEB_BIN=$<TARGET_FILE:FsEventBridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
 )
 
+add_test(
+    NAME milestone3_e2e
+    COMMAND bash ${CMAKE_SOURCE_DIR}/tests/run.sh --milestone 3 --type e2e
+)
+set_tests_properties(milestone3_e2e PROPERTIES
+    LABELS "milestone3;e2e"
+    SKIP_RETURN_CODE 77
+    ENVIRONMENT "FEB_BIN=$<TARGET_FILE:FsEventBridge>;BUILD_DIR=${CMAKE_BINARY_DIR}"
+)
+
 # --- 6. CPack 自动打包配置 (生成 .deb 和 .rpm) ---
 
 set(CPACK_PACKAGE_NAME "fseventbridge")

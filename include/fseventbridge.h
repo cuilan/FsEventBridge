@@ -8,10 +8,14 @@
 #include <time.h>
 #include <errno.h>
 #include <string.h>
+#include <poll.h>
 #include <liburing.h>
 
 // 限制与定义
 #define FEB_MAX_PATH PATH_MAX
+
+// IPC 侧最大并发客户端槽位数（与实现一致；供主循环 poll 数组定长分配）
+#define FEB_IPC_MAX_CLIENT_SLOTS 128
 
 #ifndef FEB_VERSION
 #define FEB_VERSION "unknown"
@@ -52,6 +56,13 @@ extern feb_log_level_t g_log_level;
 // 辅助宏：获取全局日志级别
 #define GET_LOG_LEVEL() g_log_level
 
+// 单客户端发送队列（积压）触顶时的处理策略
+typedef enum {
+    FEB_IPC_QUEUE_FULL_DISCONNECT = 0,   // 断开该连接（默认，与早期行为一致）
+    FEB_IPC_QUEUE_FULL_DISCARD_PENDING,  // 丢弃积压，仅尝试发送当前 NDJSON 行（更旧的事件不再补发）
+    FEB_IPC_QUEUE_FULL_SKIP_EVENT        // 本条事件不发给该客户端，连接与积压保留
+} feb_ipc_queue_full_policy_t;
+
 // 核心配置结构体
 typedef struct {
     char monitor_path[FEB_MAX_PATH];   // 监控的目标路径
@@ -68,6 +79,10 @@ typedef struct {
     int exclude_exts_count;
     char **exclude_paths;              // 排除的路径列表
     int exclude_paths_count;
+
+    // Unix Socket 客户端非阻塞发送：队列上限（字节）；0 表示使用内置默认值
+    size_t ipc_per_client_queue_max;
+    feb_ipc_queue_full_policy_t ipc_queue_full_policy;
 } feb_config_t;
 
 // 文件事件类型枚举（与 NDJSON 中 type 整数一致；首个值为未知）
@@ -131,9 +146,18 @@ void json_key_int(json_writer_t *w, const char *key, int64_t val);
 const char *feb_event_name(feb_event_type_t t);
 
 int monitor_init(const feb_config_t *config);
+// 事件主循环（poll：fanotify、UDS listen、及对慢客户端的 POLLOUT 写就绪；每轮仍会 idle_flush）
 void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile sig_atomic_t *running);
 void monitor_cleanup(int fan_fd);
 
-int ipc_init(const char *socket_path);
+int ipc_init(const char *socket_path, const feb_config_t *config);
+
+// 为有积压待发数据的客户端追加 POLLOUT 项（与 slot_index_out 对齐）；返回追加条数
+int ipc_append_pollout_fds(struct pollfd *pf_base, int *slot_index_out, int max_pairs);
+// 处理 poll 返回的 POLLOUT/POLLERR，尝试写出积压
+void ipc_dispatch_pollout_revents(struct pollfd *pf_base, const int *slot_index_in, int n_pairs);
+
+void ipc_accept_pending(int server_fd);
+void ipc_idle_flush(void);
 void ipc_broadcast(int server_fd, const feb_event_t *event);
 void ipc_cleanup(int server_fd, const char *socket_path);

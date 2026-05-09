@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include <sys/fanotify.h>
 
 static void set_default_config(feb_config_t *config) {
@@ -12,6 +13,26 @@ static void set_default_config(feb_config_t *config) {
     config->use_io_uring = true;
     config->log_level = FEB_LOG_INFO;
     config->event_mask = FAN_CLOSE_WRITE;
+    // ipc_per_client_queue_max == 0 表示使用内置默认（见 ipc_uds 中 ipc_effective_queue_max）
+    config->ipc_queue_full_policy = FEB_IPC_QUEUE_FULL_DISCONNECT;
+}
+
+// 解析 [ipc] on_queue_full；无法识别时返回 false
+static bool parse_ipc_queue_full_policy(const char *s, feb_ipc_queue_full_policy_t *out) {
+    if (!s) return false;
+    if (strcmp(s, "disconnect") == 0) {
+        *out = FEB_IPC_QUEUE_FULL_DISCONNECT;
+        return true;
+    }
+    if (strcmp(s, "discard_pending") == 0) {
+        *out = FEB_IPC_QUEUE_FULL_DISCARD_PENDING;
+        return true;
+    }
+    if (strcmp(s, "skip_event") == 0) {
+        *out = FEB_IPC_QUEUE_FULL_SKIP_EVENT;
+        return true;
+    }
+    return false;
 }
 
 // 将 TOML 字符串数组拷贝到 (out_arr, out_count)；自动跳过空字符串
@@ -153,6 +174,33 @@ bool config_load(feb_config_t *config, const char *path) {
     if (processor) {
         toml_datum_t use_uring = toml_bool_in(processor, "use_io_uring");
         if (use_uring.ok) config->use_io_uring = use_uring.u.b;
+    }
+
+    // [ipc]：慢客户端时每连接待发队列字节上限与触顶策略
+    toml_table_t *ipc = toml_table_in(conf, "ipc");
+    if (ipc) {
+        toml_datum_t qmax = toml_int_in(ipc, "per_client_queue_max_bytes");
+        if (qmax.ok) {
+            if (qmax.u.i < 0) {
+                fprintf(stderr,
+                        "Warning: per_client_queue_max_bytes must be non-negative "
+                        "(got %" PRId64 "), using built-in default\n",
+                        qmax.u.i);
+            } else {
+                config->ipc_per_client_queue_max = (size_t)qmax.u.i;
+            }
+        }
+
+        toml_datum_t pol = toml_string_in(ipc, "on_queue_full");
+        if (pol.ok) {
+            if (!parse_ipc_queue_full_policy(pol.u.s, &config->ipc_queue_full_policy)) {
+                fprintf(stderr,
+                        "Warning: unknown on_queue_full '%s' in [ipc], "
+                        "expected disconnect / discard_pending / skip_event\n",
+                        pol.u.s);
+            }
+            free(pol.u.s);
+        }
     }
 
     toml_free(conf);

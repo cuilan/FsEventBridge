@@ -141,102 +141,117 @@ static bool should_skip(const char *path, const feb_config_t *config) {
     return false;
 }
 
-// 事件主循环
+// 事件主循环：poll 多路复用——fanotify 读事件、监听 socket accept、以及对慢客户端追加 POLLOUT 写触发
 void monitor_loop(int fan_fd, int ipc_fd, const feb_config_t *config, volatile sig_atomic_t *running) {
     char buf[8192] __attribute__((aligned(__alignof__(struct fanotify_event_metadata))));
     ssize_t len;
-    struct pollfd fds[1];
-
-    fds[0].fd = fan_fd;
-    fds[0].events = POLLIN;
 
     while (*running) {
-        // 使用 poll 等待事件，避免 100% CPU 占用 (非阻塞读取)
-        int ret = poll(fds, 1, 500); // 500ms 超时，允许检查 running 标志
+        struct pollfd fds[2 + FEB_IPC_MAX_CLIENT_SLOTS];
+        int slot_idx[FEB_IPC_MAX_CLIENT_SLOTS];
+
+        fds[0].fd = fan_fd;
+        fds[0].events = POLLIN;
+        fds[1].fd = ipc_fd;
+        fds[1].events = POLLIN;
+
+        // 仅有 pending 待发字节的客户端才挂 POLLOUT，避免在无积压时空转
+        int n_pollout = ipc_append_pollout_fds(&fds[2], slot_idx, FEB_IPC_MAX_CLIENT_SLOTS);
+        int nfds = 2 + n_pollout;
+
+        int ret = poll(fds, (nfds_t)nfds, 500);
         if (ret < 0) {
             if (errno == EINTR) continue;
             LOG_ERROR("poll failed");
             break;
         }
-        if (ret == 0) continue; // 超时
 
-        len = read(fan_fd, buf, sizeof(buf));
-        if (len == -1) {
-            if (errno == EAGAIN || errno == EINTR) continue;
-            LOG_ERROR("Error reading fanotify event");
-            break;
+        // 先有连接再谈写：accept 先于 POLLOUT 处理顺序并无强制要求，但先接新客户端更直观
+        if (fds[1].revents & (POLLIN | POLLERR | POLLHUP)) {
+            ipc_accept_pending(ipc_fd);
         }
 
-        const struct fanotify_event_metadata *metadata = (struct fanotify_event_metadata *)buf;
+        // 内核通知可写时再尝试排空各客户端 backlog（与每轮末尾 ipc_idle_flush 互为补充）
+        ipc_dispatch_pollout_revents(&fds[2], slot_idx, n_pollout);
 
-        while (FAN_EVENT_OK(metadata, len)) {
-            // 检查版本兼容性
-            if (metadata->fd != FAN_NOFD) {
-                feb_event_t event = {0};
-                
-                // 获取路径
-                if (get_path_from_fd(metadata->fd, event.path, sizeof(event.path)) != 0) {
-                    LOG_WARN("Failed to get path for fd %d, skipping event", metadata->fd);
-                    close(metadata->fd);
-                    metadata = FAN_EVENT_NEXT(metadata, len);
+        if (fds[0].revents & POLLIN) {
+            len = read(fan_fd, buf, sizeof(buf));
+            if (len == -1) {
+                if (errno == EAGAIN || errno == EINTR) {
+                    ipc_idle_flush();
                     continue;
                 }
-                
-                // 检查是否在排除列表中
-                if (!should_skip(event.path, config)) {
-                    event.event_type = FEB_EVENT_UNKNOWN;
-                    event.mtime = -1;
-
-                    struct stat st;
-                    if (fstat(metadata->fd, &st) == 0) {
-                        event.size = (uint64_t)st.st_size;
-                        event.mtime = (int64_t)st.st_mtim.tv_sec;
-                    }
-
-                    event.mask = metadata->mask;
-
-                    // 解析事件类型（与 fanotify mask 对应）
-                    if (metadata->mask & FAN_CLOSE_WRITE) {
-                        event.event_type = FEB_EVENT_CLOSE_WRITE;
-                    } else if (metadata->mask & FAN_MOVED_TO) {
-                        event.event_type = FEB_EVENT_MOVED_TO;
-                    } else if (metadata->mask & FAN_MOVED_FROM) {
-                        event.event_type = FEB_EVENT_MOVED_FROM;
-                    } else if (metadata->mask & FAN_CREATE) {
-                        event.event_type = FEB_EVENT_CREATE;
-                    } else if (metadata->mask & FAN_DELETE) {
-                        event.event_type = FEB_EVENT_DELETE;
-                    } else if (metadata->mask & FAN_MODIFY) {
-                        event.event_type = FEB_EVENT_MODIFY;
-                    }
-
-                    // 网关观测时间：事件进入用户态并完成元数据读取后的墙钟时刻
-                    struct timespec rt;
-                    if (clock_gettime(CLOCK_REALTIME, &rt) == 0) {
-                        event.ts = (int64_t)rt.tv_sec;
-                    } else {
-                        event.ts = (int64_t)time(NULL);
-                    }
-
-                    ipc_broadcast(ipc_fd, &event);
-
-                    LOG_DEBUG("Event sent: %s event=%s type=%d ts=%" PRId64 " mtime=%" PRId64 " mask=0x%x size=%" PRIu64,
-                              event.path,
-                              feb_event_name(event.event_type),
-                              (int)event.event_type,
-                              event.ts,
-                              event.mtime,
-                              (unsigned)event.mask,
-                              event.size);
-                }
-
-                close(metadata->fd); // 必须手动关闭内核提供的 fd
+                LOG_ERROR("Error reading fanotify event");
+                break;
             }
-            metadata = FAN_EVENT_NEXT(metadata, len);
+
+            const struct fanotify_event_metadata *metadata = (struct fanotify_event_metadata *)buf;
+
+            while (FAN_EVENT_OK(metadata, len)) {
+                if (metadata->fd != FAN_NOFD) {
+                    feb_event_t event = {0};
+
+                    if (get_path_from_fd(metadata->fd, event.path, sizeof(event.path)) != 0) {
+                        LOG_WARN("Failed to get path for fd %d, skipping event", metadata->fd);
+                        close(metadata->fd);
+                        metadata = FAN_EVENT_NEXT(metadata, len);
+                        continue;
+                    }
+
+                    if (!should_skip(event.path, config)) {
+                        event.event_type = FEB_EVENT_UNKNOWN;
+                        event.mtime = -1;
+
+                        struct stat st;
+                        if (fstat(metadata->fd, &st) == 0) {
+                            event.size = (uint64_t)st.st_size;
+                            event.mtime = (int64_t)st.st_mtim.tv_sec;
+                        }
+
+                        event.mask = metadata->mask;
+
+                        if (metadata->mask & FAN_CLOSE_WRITE) {
+                            event.event_type = FEB_EVENT_CLOSE_WRITE;
+                        } else if (metadata->mask & FAN_MOVED_TO) {
+                            event.event_type = FEB_EVENT_MOVED_TO;
+                        } else if (metadata->mask & FAN_MOVED_FROM) {
+                            event.event_type = FEB_EVENT_MOVED_FROM;
+                        } else if (metadata->mask & FAN_CREATE) {
+                            event.event_type = FEB_EVENT_CREATE;
+                        } else if (metadata->mask & FAN_DELETE) {
+                            event.event_type = FEB_EVENT_DELETE;
+                        } else if (metadata->mask & FAN_MODIFY) {
+                            event.event_type = FEB_EVENT_MODIFY;
+                        }
+
+                        struct timespec rt;
+                        if (clock_gettime(CLOCK_REALTIME, &rt) == 0) {
+                            event.ts = (int64_t)rt.tv_sec;
+                        } else {
+                            event.ts = (int64_t)time(NULL);
+                        }
+
+                        ipc_broadcast(ipc_fd, &event);
+
+                        LOG_DEBUG("Event sent: %s event=%s type=%d ts=%" PRId64 " mtime=%" PRId64 " mask=0x%x size=%" PRIu64,
+                                  event.path,
+                                  feb_event_name(event.event_type),
+                                  (int)event.event_type,
+                                  event.ts,
+                                  event.mtime,
+                                  (unsigned)event.mask,
+                                  event.size);
+                    }
+
+                    close(metadata->fd);
+                }
+                metadata = FAN_EVENT_NEXT(metadata, len);
+            }
         }
+
+        ipc_idle_flush();
     }
-    
-    // 清理 io_uring
+
     io_uring_cleanup(&g_io_uring);
 }
 
